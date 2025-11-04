@@ -1,15 +1,15 @@
 name: Test
 
 on:
-  push:
   pull_request:
+  merge_group:
 
 jobs:
   pytest:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ${{ github.event_name == 'merge_group' && fromJSON('["3.11", "3.12"]') || fromJSON('["3.12"]') }}
     steps:
       - uses: actions/checkout@v4
 
