@@ -1,25 +1,88 @@
-# GRPO training configuration
+# GRPO/DRPO training configuration
+# Based on verl.trainer.main_ppo parameters
 
-# Training hyperparameters
-learning_rate: 5.0e-6
-batch_size: 8
-grpo_epochs: 4
-max_length: 1024
-gradient_accumulation_steps: 1
+# Algorithm settings
+algorithm:
+  adv_estimator: "grpo"
+  filter_groups_enable: false
 
-# Optimization
-warmup_steps: 100
-weight_decay: 0.01
-max_grad_norm: 1.0
+# Data settings
+data:
+  train_files: "./data/train.parquet"
+  val_files: "./data/aime.parquet"
+  train_batch_size: 128
+  val_batch_size: 512
+  max_prompt_length: 1024
+  max_response_length: 8192
 
-# Logging and checkpointing
-logging_steps: 10
-save_steps: 500
-save_total_limit: 3
-output_dir: "./out/grpo_training"
+# Model and actor settings
+actor_rollout_ref:
+  model:
+    path: null  # Set via command line or environment variable
+    use_remove_padding: true
+    enable_gradient_checkpointing: true
+  
+  actor:
+    optim_lr: 2.0e-6
+    ppo_mini_batch_size: 32
+    use_dynamic_bsz: true
+    use_max_seq_len: true
+    ppo_max_token_len_per_gpu: 36864
+    ppo_epochs: 1
+    
+    # KL loss settings
+    use_kl_loss: false
+    kl_loss_coef: 0.001
+    kl_loss_type: "low_var_kl"
+    ppo_kl_type: "kl"
+    
+    # DRPO specific parameters
+    delta: 1.0e-4
+    beta: 1000.0
+    tau: 10.0
+    lambda: 0.1
+    entropy_coeff: 0.0
+    loss_type: "drpo"
+    
+    # Parallelism settings
+    ulysses_sequence_parallel_size: 1
+    
+    # FSDP configuration
+    fsdp_config:
+      param_offload: false
+      grad_offload: false
+      optimizer_offload: false
+  
+  ref:
+    enable: false
+    fsdp_config:
+      param_offload: true
+  
+  rollout:
+    tensor_model_parallel_size: 1
+    name: "vllm"
+    temperature: 0.6
+    val_temperature: 0.6
+    gpu_memory_utilization: 0.85
+    n: 8
+    n_val: 8
+    max_num_batched_tokens: 10240
+    max_num_seqs: 1024
 
-# GRPO specific
-num_generations: 4
-temperature: 0.7
-top_p: 0.9
+# Trainer settings
+trainer:
+  critic_warmup: 0
+  logger: ["console", "wandb"]
+  project_name: "RLVR-Vocab"
+  experiment_name: "grpo-qwen3-0.6B"
+  balance_batch: false
+  val_before_train: true
+  n_gpus_per_node: 8
+  nnodes: 1
+  save_freq: 20
+  test_freq: 20
+  default_hdfs_dir: null
+  total_training_steps: 1002
+  total_epochs: 30
+  output_dir: "./out/grpo_training"
 
