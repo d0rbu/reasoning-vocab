@@ -2,9 +2,7 @@ name: Lint
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 jobs:
   ruff:
@@ -30,4 +28,3 @@ jobs:
 
       - name: Run Ruff format check
         run: uv run ruff format --check .
-

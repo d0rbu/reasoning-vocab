@@ -2,9 +2,7 @@ name: Type Check
 
 on:
   push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
 
 jobs:
   ty:
@@ -27,4 +25,3 @@ jobs:
 
       - name: Run ty type check
         run: uvx ty check .
-
