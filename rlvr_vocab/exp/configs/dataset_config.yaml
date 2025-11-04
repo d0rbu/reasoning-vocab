@@ -1,0 +1,7 @@
+# Dataset configuration
+
+# Dataset selection
+dataset_name: "deepscaler/DeepScaleR-Preview-Dataset"
+train_split: "train"
+val_split: "test"
+
