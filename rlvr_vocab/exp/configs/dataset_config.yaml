@@ -1,0 +1,18 @@
+# Dataset configuration
+
+# Dataset selection
+dataset_name: "trl-lib/ultrafeedback-prompt"
+split: "train"
+max_samples: null  # null for all samples
+
+# Math datasets (for future use)
+math_datasets:
+  - name: "gsm8k"
+    split: "train"
+  - name: "hendrycks/math"
+    split: "train"
+
+# Data preprocessing
+max_prompt_length: 512
+max_completion_length: 512
+

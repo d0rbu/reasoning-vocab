@@ -1,0 +1,13 @@
+# Model configuration for Qwen3 with reasoning vocabulary
+
+model_name: "Qwen/Qwen2-0.5B-Instruct"
+num_reasoning_tokens: 0  # 0 for baseline, n_s for full reasoning vocab
+
+# Model parameters
+hidden_size: 896
+vocab_size: 151936
+
+# Reasoning settings
+reasoning_start_token: "<reasoning>"
+reasoning_end_token: "</reasoning>"
+
