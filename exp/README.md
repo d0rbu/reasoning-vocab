@@ -57,7 +57,7 @@ conf/
 python grpo_train.py training.learning_rate=5e-6
 
 # Change model
-python grpo_train.py model.name=Qwen/Qwen2.5-1.5B
+python grpo_train.py model.name=Qwen/Qwen3-1.5B
 
 # Change dataset size
 python grpo_train.py dataset.max_train_samples=5000
