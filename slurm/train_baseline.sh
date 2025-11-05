@@ -37,9 +37,9 @@ cd $SCRATCH/reasoning-vocab
 source .venv/bin/activate
 
 # Run baseline training (no reasoning vocabulary)
-# Note: Hydra configs are in rlvr_vocab/exp/conf/
+# Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun --ntasks=$SLURM_NTASKS --ntasks-per-node=$SLURM_NTASKS_PER_NODE \
-    uv run python rlvr_vocab/exp/grpo_train.py \
+    uv run python exp/grpo_train.py \
     exp_name=baseline_run \
     model.reasoning_vocab_size=0

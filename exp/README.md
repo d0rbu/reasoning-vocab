@@ -8,13 +8,13 @@ This directory contains the training scripts and configurations for GRPO (Group 
 
 ```bash
 # Baseline training (no reasoning vocabulary)
-uv run python rlvr_vocab/exp/grpo_train.py
+uv run python exp/grpo_train.py
 
 # With reasoning vocabulary
-uv run python rlvr_vocab/exp/grpo_train.py model.reasoning_vocab_size=151646
+uv run python exp/grpo_train.py model.reasoning_vocab_size=151646
 
 # Override any parameter
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=my_experiment \
     training.learning_rate=1e-5 \
     training.num_train_epochs=2 \
@@ -167,19 +167,19 @@ Training outputs are saved to `./out/{exp_name}/`:
 
 ```bash
 # 1. Test configuration (fast iteration)
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=test_run \
     dataset.max_train_samples=100 \
     training.num_train_epochs=1 \
     logging.mode=offline
 
 # 2. Baseline training
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=baseline_full \
     model.reasoning_vocab_size=0
 
 # 3. Reasoning vocabulary training
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=reasoning_full \
     model.reasoning_vocab_size=151646
 

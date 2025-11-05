@@ -13,16 +13,16 @@ When reasoning tokens are active, the model uses a **2× vocabulary** where the 
 ## 🏗️ Directory Structure
 
 ```
-rlvr_vocab/
+.
 ├── core/                  # Core model, token, and training logic
 ├── exp/                   # Experiment scripts and configs
 ├── viz/                   # Visualization scripts
-├── model/                 # Saved model checkpoints
-├── data/                  # Datasets (GSM8K, MATH, etc.)
-├── out/                   # Training outputs (logs, metrics)
-├── fig/                   # Saved figures
 ├── slurm/                 # Scripts to run experiments on SLURM
-└── test/                  # Pytest unit tests
+├── test/                  # Pytest unit tests
+├── model/                 # Saved model checkpoints (created during training)
+├── data/                  # Datasets (created during training)
+├── out/                   # Training outputs (created during training)
+└── fig/                   # Saved figures (created during visualization)
 ```
 
 ## ⚙️ Setup
@@ -53,24 +53,24 @@ pre-commit install
 
 ```bash
 # Check that everything is configured correctly
-uv run python rlvr_vocab/exp/validate_setup.py
+uv run pytest test/test_setup.py -v
 ```
 
 ### Run Training
 
 ```bash
 # Quick test run (10 samples, 1 epoch)
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=test_run \
     dataset.max_train_samples=10 \
     training.num_train_epochs=1
 
 # Baseline training (no reasoning vocabulary)
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=baseline
 
 # With reasoning vocabulary
-uv run python rlvr_vocab/exp/grpo_train.py \
+uv run python exp/grpo_train.py \
     exp_name=reasoning \
     model.reasoning_vocab_size=151646
 ```
@@ -85,7 +85,7 @@ sbatch slurm/train_baseline.sh
 sbatch slurm/train_reasoning.sh
 ```
 
-See [rlvr_vocab/exp/README.md](rlvr_vocab/exp/README.md) for detailed training documentation.
+See [exp/README.md](exp/README.md) for detailed training documentation.
 
 ## 🧪 Development
 
