@@ -19,7 +19,12 @@ import wandb
 from datasets import Dataset, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+)
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
@@ -51,7 +56,7 @@ def setup_wandb(cfg: DictConfig) -> None:
     wandb.init(**wandb_config)
 
 
-def load_model_and_tokenizer(cfg: DictConfig) -> tuple[Any, PreTrainedTokenizer]:
+def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrainedTokenizer]:
     """
     Load model and tokenizer from HuggingFace.
 
