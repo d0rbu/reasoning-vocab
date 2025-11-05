@@ -1,0 +1,25 @@
+# Dataset configuration for DeepScaleR-Preview-Dataset
+
+# Dataset identifier from HuggingFace
+name: "agentica-org/DeepScaleR-Preview-Dataset"
+
+# Split configuration
+train_split: "train"
+val_split: null  # No validation split in this dataset
+
+# Data sampling (for faster iteration)
+max_train_samples: null  # null means use all samples
+max_val_samples: null
+
+# Prompt template for math problems
+# Available placeholders: {problem}
+prompt_template: |
+  Solve the following math problem step by step. Show your reasoning and provide the final answer.
+  
+  Problem: {problem}
+  
+  Solution:
+
+# Answer extraction settings
+answer_format: "latex"  # Options: latex, numeric, text
+

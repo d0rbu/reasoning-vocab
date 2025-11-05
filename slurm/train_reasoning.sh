@@ -28,6 +28,7 @@ export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
 module load GCCcore/13.3.0 Python/3.12.3
+module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
 # Change to the project directory
 cd $SCRATCH/reasoning-vocab
@@ -36,11 +37,10 @@ cd $SCRATCH/reasoning-vocab
 source .venv/bin/activate
 
 # Run training with reasoning vocabulary (reasoning_vocab_size = vocab_size)
-# For Qwen3-0.6B, vocab_size is approximately 151936
+# For Qwen2.5-0.6B, vocab_size is approximately 151646
+# Note: Hydra configs are in rlvr_vocab/exp/conf/
+# Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun --ntasks=$SLURM_NTASKS --ntasks-per-node=$SLURM_NTASKS_PER_NODE \
-    uv run rlvr_vocab/exp/grpo_train.py \
-    --config rlvr_vocab/exp/configs/grpo_config.yaml \
-    --model-config rlvr_vocab/exp/configs/qwen3_reasoning.yaml \
-    --dataset-config rlvr_vocab/exp/configs/dataset_config.yaml \
-    --reasoning-vocab-size 151936
-
+    uv run python rlvr_vocab/exp/grpo_train.py \
+    exp_name=reasoning_vocab_run \
+    model.reasoning_vocab_size=151646

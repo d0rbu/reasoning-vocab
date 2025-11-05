@@ -47,6 +47,46 @@ uv sync
 pre-commit install
 ```
 
+## 🚀 Quick Start
+
+### Validate Setup
+
+```bash
+# Check that everything is configured correctly
+uv run python rlvr_vocab/exp/validate_setup.py
+```
+
+### Run Training
+
+```bash
+# Quick test run (10 samples, 1 epoch)
+uv run python rlvr_vocab/exp/grpo_train.py \
+    exp_name=test_run \
+    dataset.max_train_samples=10 \
+    training.num_train_epochs=1
+
+# Baseline training (no reasoning vocabulary)
+uv run python rlvr_vocab/exp/grpo_train.py \
+    exp_name=baseline
+
+# With reasoning vocabulary
+uv run python rlvr_vocab/exp/grpo_train.py \
+    exp_name=reasoning \
+    model.reasoning_vocab_size=151646
+```
+
+### SLURM Training
+
+```bash
+# Baseline training
+sbatch slurm/train_baseline.sh
+
+# Reasoning vocabulary training  
+sbatch slurm/train_reasoning.sh
+```
+
+See [rlvr_vocab/exp/README.md](rlvr_vocab/exp/README.md) for detailed training documentation.
+
 ## 🧪 Development
 
 ### Run tests
@@ -79,4 +119,3 @@ uvx ty check .
 ## 📄 License
 
 MIT License
-
