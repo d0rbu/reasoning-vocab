@@ -11,7 +11,6 @@ These tests verify that different components work together correctly:
 import tempfile
 from pathlib import Path
 
-import pytest
 import torch as th
 from datasets import Dataset
 from omegaconf import DictConfig

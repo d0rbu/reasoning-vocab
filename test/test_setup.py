@@ -7,7 +7,6 @@ These tests verify that the training infrastructure is correctly configured.
 from pathlib import Path
 from typing import cast
 
-import pytest
 import torch as th
 from datasets import Dataset, load_dataset
 from hydra import compose, initialize_config_dir
