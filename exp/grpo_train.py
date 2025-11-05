@@ -11,19 +11,20 @@ Usage:
 
 import os
 from pathlib import Path
+from typing import Any, cast
 
 import hydra
 import torch as th
 import wandb
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
 
-def setup_wandb(cfg: DictConfig):
+def setup_wandb(cfg: DictConfig) -> None:
     """
     Initialize Weights & Biases logging.
 
@@ -34,22 +35,23 @@ def setup_wandb(cfg: DictConfig):
         os.environ["WANDB_DISABLED"] = "true"
         return
 
-    wandb_config = {
-        "project": cfg.logging.project,
-        "name": cfg.logging.run_name or cfg.exp_name,
-        "config": OmegaConf.to_container(cfg, resolve=True),
-        "tags": cfg.logging.tags,
-        "notes": cfg.logging.notes,
-        "mode": cfg.logging.mode,
+    # Build wandb config with proper types
+    wandb_config: dict[str, Any] = {
+        "project": str(cfg.logging.project),
+        "name": str(cfg.logging.run_name) if cfg.logging.run_name else str(cfg.exp_name),
+        "config": cast(dict[str, Any], OmegaConf.to_container(cfg, resolve=True)),
+        "tags": list(cfg.logging.tags) if cfg.logging.tags else [],
+        "notes": str(cfg.logging.notes) if cfg.logging.notes else "",
+        "mode": str(cfg.logging.mode),
     }
 
     if cfg.logging.entity:
-        wandb_config["entity"] = cfg.logging.entity
+        wandb_config["entity"] = str(cfg.logging.entity)
 
     wandb.init(**wandb_config)
 
 
-def load_model_and_tokenizer(cfg: DictConfig):
+def load_model_and_tokenizer(cfg: DictConfig) -> tuple[Any, PreTrainedTokenizer]:
     """
     Load model and tokenizer from HuggingFace.
 
@@ -73,7 +75,8 @@ def load_model_and_tokenizer(cfg: DictConfig):
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
     # Load model with kwargs from config (unpacking model_kwargs)
-    model_kwargs = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
+    model_kwargs_raw = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
+    model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
     model_kwargs["torch_dtype"] = torch_dtype  # Override with mapped dtype
 
     model = AutoModelForCausalLM.from_pretrained(
@@ -103,7 +106,7 @@ def load_model_and_tokenizer(cfg: DictConfig):
     return model, tokenizer
 
 
-def preprocess_dataset(dataset, tokenizer):
+def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Dataset:
     """
     Preprocess dataset into conversational format using chat template.
 
@@ -115,22 +118,22 @@ def preprocess_dataset(dataset, tokenizer):
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
 
-    def format_example(example):
+    def format_example(example: dict[str, Any]) -> dict[str, str]:
         # Create messages in chat format (no system prompt)
         messages = [
-            {"role": "user", "content": example["problem"]},
+            {"role": "user", "content": str(example["problem"])},
         ]
 
         # Apply chat template to get the formatted prompt
         # add_generation_prompt=True adds the assistant prompt at the end
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
-        return {"prompt": prompt, "answer": example["answer"]}
+        return {"prompt": str(prompt), "answer": str(example["answer"])}
 
     return dataset.map(format_example, desc="Formatting dataset with chat template")
 
 
-def load_and_prepare_dataset(cfg: DictConfig, tokenizer):
+def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> Dataset:
     """
     Load and preprocess dataset.
 
@@ -143,12 +146,16 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer):
     """
     logger.info(f"Loading dataset: {cfg.dataset.name}")
 
-    # Load dataset
-    dataset = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
+    # Load dataset - cast to Dataset type since we know we're loading a specific split
+    dataset_raw = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
+    dataset = cast(Dataset, dataset_raw)
 
     # Subsample if requested
     if cfg.dataset.max_train_samples is not None:
-        dataset = dataset.select(range(min(cfg.dataset.max_train_samples, len(dataset))))
+        dataset = cast(
+            Dataset,
+            dataset.select(range(min(int(cfg.dataset.max_train_samples), len(dataset)))),
+        )
         logger.debug(f"Subsampled to {len(dataset)} examples")
 
     # Preprocess with chat template (no system prompt)
@@ -231,7 +238,7 @@ def main(cfg: DictConfig):
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,  # GRPOTrainer uses processing_class, not tokenizer
         reward_funcs=[accuracy_reward, think_format_reward],  # Multiple TRL rewards
     )
 

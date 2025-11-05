@@ -5,10 +5,11 @@ These tests verify that the training infrastructure is correctly configured.
 """
 
 from pathlib import Path
+from typing import cast
 
 import pytest
 import torch as th
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from hydra import compose, initialize_config_dir
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl.rewards import accuracy_reward, think_format_reward
@@ -35,7 +36,9 @@ def test_dependencies_importable():
 
 def test_dataset_loading():
     """Test that the DeepScaleR dataset can be loaded."""
-    dataset = load_dataset("agentica-org/DeepScaleR-Preview-Dataset", split="train[:10]")
+    dataset_raw = load_dataset("agentica-org/DeepScaleR-Preview-Dataset", split="train[:10]")
+    # Cast to Dataset since we're loading a specific split with slice notation
+    dataset = cast(Dataset, dataset_raw)
 
     assert len(dataset) == 10
     assert "problem" in dataset[0]
