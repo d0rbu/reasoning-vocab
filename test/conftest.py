@@ -5,7 +5,7 @@ This file makes fixtures from test_utils.py available to all test files.
 """
 
 # Import all fixtures from test_utils so they're available across all test files
-from test_utils import (  # type: ignore[import-not-found]
+from test.test_utils import (
     cpu_device,
     minimal_hydra_config,
     mock_completions,

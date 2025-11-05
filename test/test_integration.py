@@ -14,11 +14,6 @@ from pathlib import Path
 import torch as th
 from datasets import Dataset
 from omegaconf import DictConfig
-from test_utils import (  # type: ignore[import-not-found]
-    assert_dataset_fields,
-    create_tiny_model,
-    create_tiny_tokenizer,
-)
 from trl import GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
@@ -26,6 +21,11 @@ from exp.grpo_train import (
     create_grpo_config,
     load_model_and_tokenizer,
     preprocess_dataset,
+)
+from test.test_utils import (
+    assert_dataset_fields,
+    create_tiny_model,
+    create_tiny_tokenizer,
 )
 
 

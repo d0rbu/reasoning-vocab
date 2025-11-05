@@ -19,11 +19,6 @@ import pytest
 import torch as th
 from datasets import Dataset
 from omegaconf import DictConfig
-from test_utils import (  # type: ignore[import-not-found]
-    assert_dataset_fields,
-    create_tiny_model,
-    create_tiny_tokenizer,
-)
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
@@ -34,6 +29,11 @@ from exp.grpo_train import (
     load_model_and_tokenizer,
     preprocess_dataset,
     setup_wandb,
+)
+from test.test_utils import (
+    assert_dataset_fields,
+    create_tiny_model,
+    create_tiny_tokenizer,
 )
 
 
