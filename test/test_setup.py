@@ -48,8 +48,6 @@ def test_dataset_loading():
 
 def test_accuracy_reward_function():
     """Test TRL's accuracy_reward function with various inputs."""
-    pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
     # Test cases: (completion, solution, expected_reward)
     # Note: This tests the TRL library's accuracy_reward function behavior
     test_cases = [

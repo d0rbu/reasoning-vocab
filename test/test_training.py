@@ -205,8 +205,6 @@ class TestRewardFunctions:
 
     def test_accuracy_reward_correct_answer(self):
         """Test accuracy_reward with correct answers."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         completions = [[{"content": "The answer is \\boxed{4}"}]]
         solutions = ["4"]
 
@@ -218,8 +216,6 @@ class TestRewardFunctions:
 
     def test_accuracy_reward_wrong_answer(self):
         """Test accuracy_reward with wrong answers."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         completions = [[{"content": "The answer is \\boxed{5}"}]]
         solutions = ["4"]
 
@@ -231,8 +227,6 @@ class TestRewardFunctions:
 
     def test_accuracy_reward_batch(self, mock_completions: list, mock_solutions: list):
         """Test accuracy_reward with batch of completions."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         rewards = accuracy_reward(mock_completions, mock_solutions)
 
         assert len(rewards) == len(mock_completions)
@@ -269,8 +263,6 @@ class TestRewardFunctions:
 
     def test_reward_edge_cases(self):
         """Test reward functions with edge cases."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         edge_cases = [
             [[{"content": ""}]],  # Empty completion
             [[{"content": "\\boxed{}"}]],  # Empty box

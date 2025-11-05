@@ -225,8 +225,6 @@ class TestRewardPipeline:
 
     def test_reward_functions_with_dataset(self, sample_dataset: Dataset):
         """Test reward functions work with dataset answers."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         # Create mock completions matching dataset
         completions = [
             [{"content": f"The answer is \\boxed{{{example['answer']}}}"}]
@@ -245,8 +243,6 @@ class TestRewardPipeline:
 
     def test_multiple_reward_functions(self):
         """Test that multiple reward functions can be applied."""
-        pytest.importorskip("math_verify", reason="accuracy_reward requires math_verify package")
-
         completions = [
             [{"content": "<think>\nLet me think\n</think>\nThe answer is \\boxed{4}"}],
             [{"content": "The answer is \\boxed{4}"}],
