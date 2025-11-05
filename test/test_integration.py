@@ -14,11 +14,6 @@ from pathlib import Path
 import torch as th
 from datasets import Dataset
 from omegaconf import DictConfig
-from test_utils import (
-    assert_dataset_fields,
-    create_tiny_model,
-    create_tiny_tokenizer,
-)
 from trl import GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
@@ -26,6 +21,11 @@ from exp.grpo_train import (
     create_grpo_config,
     load_model_and_tokenizer,
     preprocess_dataset,
+)
+from test.test_utils import (
+    assert_dataset_fields,
+    create_tiny_model,
+    create_tiny_tokenizer,
 )
 
 
@@ -238,7 +238,9 @@ class TestRewardPipeline:
         assert len(acc_rewards) == len(completions)
         assert all(isinstance(r, float) for r in acc_rewards)
         # All should be correct since we used the right answers
-        assert all(r >= 0.5 for r in acc_rewards), "Expected high rewards for correct answers"
+        assert all(isinstance(r, float) and r >= 0.5 for r in acc_rewards), (
+            "Expected high rewards for correct answers"
+        )
 
     def test_multiple_reward_functions(self):
         """Test that multiple reward functions can be applied."""
