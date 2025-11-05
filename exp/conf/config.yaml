@@ -1,0 +1,14 @@
+# Main Hydra configuration file for GRPO training
+# Override any parameter with: python grpo_train.py param=value
+
+defaults:
+  - model: qwen3_0.6b
+  - dataset: deepscaler
+  - training: grpo_default
+  - logging: wandb
+  - _self_
+
+# Experiment metadata
+exp_name: grpo_baseline
+seed: 0
+output_dir: ./out/${exp_name}

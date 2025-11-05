@@ -1,7 +1,0 @@
-# Model configuration for Qwen3 with reasoning vocabulary
-
-model_name: "Qwen/Qwen3-0.6B"
-reasoning_vocab_size: 0
-reasoning_start_token: "<think>"
-reasoning_end_token: "</think>"
-

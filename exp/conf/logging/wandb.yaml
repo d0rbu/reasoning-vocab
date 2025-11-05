@@ -1,0 +1,21 @@
+# Weights & Biases logging configuration
+
+# Enable/disable wandb
+enabled: true
+
+# Project and entity
+project: "rlvr-vocab"
+entity: null  # null means use default wandb entity
+
+# Run configuration
+run_name: null  # null means auto-generate from exp_name
+tags: []
+notes: ""
+
+# Logging settings
+log_model: false  # Whether to log model checkpoints to wandb
+log_freq: 10  # Log every N steps
+
+# W&B mode: online, offline, or disabled
+mode: "online"  # Options: online, offline, disabled
+

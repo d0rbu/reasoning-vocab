@@ -1,0 +1,24 @@
+# Model configuration for Qwen3-0.6B with optional reasoning vocabulary
+
+# Model identifier from HuggingFace
+name: "Qwen/Qwen2.5-0.6B"  # Using Qwen2.5 as Qwen3 may not be available yet
+
+# Reasoning vocabulary settings
+reasoning_vocab_size: 0  # 0 means baseline (no reasoning vocab), set to >0 to enable
+reasoning_start_token: "<think>"
+reasoning_end_token: "</think>"
+
+# Model loading arguments
+model_kwargs:
+  torch_dtype: "bfloat16"  # float32, float16, bfloat16
+  trust_remote_code: true
+  load_in_8bit: false
+  load_in_4bit: false
+
+# Generation arguments
+generation_kwargs:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: true
+
