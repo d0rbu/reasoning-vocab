@@ -11,15 +11,6 @@ val_split: null  # No validation split in this dataset
 max_train_samples: null  # null means use all samples
 max_val_samples: null
 
-# Prompt template for math problems
-# Available placeholders: {problem}
-prompt_template: |
-  Solve the following math problem step by step. Show your reasoning and provide the final answer.
-  
-  Problem: {problem}
-  
-  Solution:
-
-# Answer extraction settings
-answer_format: "latex"  # Options: latex, numeric, text
+# System prompt for chat format
+system_prompt: "You are a helpful math assistant. Solve the problem step by step and provide your final answer."
 

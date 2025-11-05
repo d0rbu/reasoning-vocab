@@ -85,7 +85,10 @@ python grpo_train.py dataset=gsm8k
 ### Model Configuration
 - `model.name`: HuggingFace model identifier
 - `model.reasoning_vocab_size`: Size of reasoning vocabulary (0 = baseline)
-- `model.torch_dtype`: Precision (float32, float16, bfloat16)
+- `model.model_kwargs.torch_dtype`: Precision (fp32, fp16, bf16)
+- `model.model_kwargs.load_in_8bit`: Enable 8-bit quantization
+- `model.generation_kwargs.max_new_tokens`: Max tokens to generate
+- `model.generation_kwargs.temperature`: Sampling temperature
 
 ### Training Configuration
 - `training.learning_rate`: Learning rate (default: 5e-6)
@@ -97,7 +100,7 @@ python grpo_train.py dataset=gsm8k
 ### Dataset Configuration
 - `dataset.name`: HuggingFace dataset identifier
 - `dataset.max_train_samples`: Limit training samples (null = all)
-- `dataset.prompt_template`: Template for formatting prompts
+- `dataset.system_prompt`: System prompt for chat format
 
 ### Logging Configuration
 - `logging.enabled`: Enable/disable WandB (default: true)
@@ -126,24 +129,32 @@ python grpo_train.py logging.mode=offline
 
 ## Dataset Format
 
-The training script expects datasets with the following fields:
-- `problem`: The problem text (e.g., math question)
-- `answer`: The ground truth answer
-- `solution`: (Optional) Solution steps
+The training script uses **conversational format** with the tokenizer's chat template:
+
+```python
+messages = [
+    {"role": "system", "content": "You are a helpful math assistant..."},
+    {"role": "user", "content": "Solve: 2x + 5 = 13"},
+]
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+```
 
 ### Supported Datasets
 - **agentica-org/DeepScaleR-Preview-Dataset**: Math problems (default)
+  - Fields: `problem`, `answer`, `solution`
 - Custom datasets can be added by creating new config files
 
 ## Reward Function
 
-The reward function verifies answer correctness using multiple methods:
-1. Exact string match (normalized)
-2. Numeric comparison (with tolerance)
-3. Symbolic comparison (using SymPy)
-4. LaTeX parsing
+The training uses TRL's built-in **`accuracy_reward`** function which:
 
-Rewards are binary: 1.0 for correct, 0.0 for incorrect.
+1. Extracts the answer from the completion (looks for `\\boxed{...}` pattern)
+2. Compares with ground truth using:
+   - Math verification (if both are parseable)
+   - Normalized text comparison (if not parseable)
+3. Returns 1.0 for correct, 0.0 for incorrect
+
+Reference: https://huggingface.co/docs/trl/v0.24.0/rewards
 
 ## Output Structure
 
@@ -180,7 +191,7 @@ uv run python rlvr_vocab/exp/grpo_train.py \
 ### Out of Memory (OOM)
 - Reduce `training.per_device_train_batch_size`
 - Increase `training.gradient_accumulation_steps`
-- Enable `model.load_in_8bit=true` or `model.load_in_4bit=true`
+- Enable `model.model_kwargs.load_in_8bit=true`
 - Ensure `training.gradient_checkpointing=true`
 
 ### Slow Training
@@ -199,22 +210,30 @@ uv run python rlvr_vocab/exp/grpo_train.py \
 
 ## Advanced Usage
 
-### Custom Prompt Templates
+### Custom System Prompts
 
 Edit `conf/dataset/deepscaler.yaml`:
 
 ```yaml
-prompt_template: |
-  [INST] Solve this math problem:
-  
-  {problem}
-  
-  Provide your answer in the format: Answer: <your answer> [/INST]
+system_prompt: "You are an expert mathematician. Show all your work and explain each step clearly."
 ```
 
-### Custom Reward Functions
+### Multiple Reward Functions
 
-Edit `rlvr_vocab/core/reward.py` to implement custom verification logic.
+You can combine multiple reward functions (see TRL docs):
+
+```python
+from trl.rewards import accuracy_reward, think_format_reward
+
+# In grpo_train.py, modify:
+trainer = GRPOTrainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    tokenizer=tokenizer,
+    reward_funcs=[accuracy_reward, think_format_reward],  # Multiple rewards
+)
+```
 
 ### Multi-GPU Training
 

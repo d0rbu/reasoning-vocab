@@ -10,6 +10,5 @@ defaults:
 
 # Experiment metadata
 exp_name: grpo_baseline
-seed: 42
+seed: 0
 output_dir: ./out/${exp_name}
-

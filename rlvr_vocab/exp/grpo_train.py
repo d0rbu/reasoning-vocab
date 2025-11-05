@@ -10,21 +10,17 @@ Usage:
 """
 
 import os
-import sys
 from pathlib import Path
 
 import hydra
-import torch
+import torch as th
 import wandb
+from datasets import load_dataset
+from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
-
-# Add parent directory to path for imports
-sys.path.append(str(Path(__file__).parent.parent.parent))
-
-from rlvr_vocab.core.dataset import MathDataset
-from rlvr_vocab.core.reward import create_reward_function
+from trl.rewards import accuracy_reward
 
 
 def setup_wandb(cfg: DictConfig):
@@ -63,29 +59,32 @@ def load_model_and_tokenizer(cfg: DictConfig):
     Returns:
         Tuple of (model, tokenizer)
     """
-    print(f"Loading model: {cfg.model.name}")
+    logger.info(f"Loading model: {cfg.model.name}")
 
     # Determine dtype
     dtype_map = {
-        "float32": torch.float32,
-        "float16": torch.float16,
-        "bfloat16": torch.bfloat16,
+        "fp32": th.float32,
+        "float32": th.float32,
+        "fp16": th.float16,
+        "float16": th.float16,
+        "bf16": th.bfloat16,
+        "bfloat16": th.bfloat16,
     }
-    torch_dtype = dtype_map.get(cfg.model.torch_dtype, torch.bfloat16)
+    torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load model
+    # Load model with kwargs from config
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.name,
         torch_dtype=torch_dtype,
-        trust_remote_code=cfg.model.trust_remote_code,
-        load_in_8bit=cfg.model.load_in_8bit,
-        load_in_4bit=cfg.model.load_in_4bit,
+        trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
+        load_in_8bit=cfg.model.model_kwargs.load_in_8bit,
+        load_in_4bit=cfg.model.model_kwargs.load_in_4bit,
     )
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
         cfg.model.name,
-        trust_remote_code=cfg.model.trust_remote_code,
+        trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
     )
 
     # Set pad token if not set
@@ -97,30 +96,67 @@ def load_model_and_tokenizer(cfg: DictConfig):
     if cfg.training.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
-    print(f"Model loaded: {model.__class__.__name__}")
-    print(f"Model size: {sum(p.numel() for p in model.parameters()) / 1e9:.2f}B parameters")
+    num_params = sum(p.numel() for p in model.parameters()) / 1e9
+    logger.info(f"Model loaded: {model.__class__.__name__}")
+    logger.info(f"Model size: {num_params:.2f}B parameters")
 
     return model, tokenizer
 
 
-def load_dataset(cfg: DictConfig):
+def preprocess_dataset(dataset, tokenizer, system_prompt: str):
+    """
+    Preprocess dataset into conversational format using chat template.
+
+    Args:
+        dataset: HuggingFace dataset
+        tokenizer: Tokenizer with chat template support
+        system_prompt: System prompt for the assistant
+
+    Returns:
+        Preprocessed dataset with 'prompt' and 'answer' fields
+    """
+
+    def format_example(example):
+        # Create messages in chat format
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": example["problem"]},
+        ]
+
+        # Apply chat template to get the formatted prompt
+        # add_generation_prompt=True adds the assistant prompt at the end
+        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+        return {"prompt": prompt, "answer": example["answer"]}
+
+    return dataset.map(format_example, desc="Formatting dataset with chat template")
+
+
+def load_and_prepare_dataset(cfg: DictConfig, tokenizer):
     """
     Load and preprocess dataset.
 
     Args:
         cfg: Hydra configuration
+        tokenizer: Tokenizer for chat template formatting
 
     Returns:
-        MathDataset instance
+        Preprocessed dataset
     """
-    dataset = MathDataset(
-        dataset_name=cfg.dataset.name,
-        train_split=cfg.dataset.train_split,
-        val_split=cfg.dataset.val_split,
-        prompt_template=cfg.dataset.prompt_template,
-        max_train_samples=cfg.dataset.max_train_samples,
-        max_val_samples=cfg.dataset.max_val_samples,
-    )
+    logger.info(f"Loading dataset: {cfg.dataset.name}")
+
+    # Load dataset
+    dataset = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
+
+    # Subsample if requested
+    if cfg.dataset.max_train_samples is not None:
+        dataset = dataset.select(range(min(cfg.dataset.max_train_samples, len(dataset))))
+        logger.info(f"Subsampled to {len(dataset)} examples")
+
+    # Preprocess with chat template
+    dataset = preprocess_dataset(dataset, tokenizer, cfg.dataset.system_prompt)
+
+    logger.info(f"Dataset prepared with {len(dataset)} examples")
 
     return dataset
 
@@ -170,14 +206,14 @@ def main(cfg: DictConfig):
         cfg: Hydra configuration
     """
     # Print configuration
-    print("=" * 80)
-    print("Configuration:")
-    print("=" * 80)
-    print(OmegaConf.to_yaml(cfg))
-    print("=" * 80)
+    logger.debug("=" * 80)
+    logger.debug("Configuration:")
+    logger.debug("=" * 80)
+    logger.debug(OmegaConf.to_yaml(cfg))
+    logger.debug("=" * 80)
 
     # Set random seed
-    torch.manual_seed(cfg.seed)
+    th.manual_seed(cfg.seed)
 
     # Setup WandB
     setup_wandb(cfg)
@@ -185,43 +221,38 @@ def main(cfg: DictConfig):
     # Load model and tokenizer
     model, tokenizer = load_model_and_tokenizer(cfg)
 
-    # Load dataset
-    math_dataset = load_dataset(cfg)
-    train_dataset = math_dataset.get_train_dataset()
-
-    # Create reward function
-    print("Creating reward function...")
-    reward_fn = create_reward_function(train_dataset)
+    # Load and prepare dataset
+    train_dataset = load_and_prepare_dataset(cfg, tokenizer)
 
     # Create GRPO config
     training_args = create_grpo_config(cfg)
 
-    # Initialize trainer
-    print("Initializing GRPOTrainer...")
+    # Initialize trainer with TRL's accuracy_reward
+    logger.info("Initializing GRPOTrainer with accuracy_reward...")
     trainer = GRPOTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         tokenizer=tokenizer,
-        reward_funcs=reward_fn,
+        reward_funcs=accuracy_reward,  # Use TRL's built-in accuracy reward
     )
 
     # Train
-    print("=" * 80)
-    print("Starting training...")
-    print("=" * 80)
+    logger.info("=" * 80)
+    logger.info("Starting training...")
+    logger.info("=" * 80)
     trainer.train()
 
     # Save final model
     final_model_path = Path(cfg.output_dir) / "final_model"
-    print(f"Saving final model to {final_model_path}")
+    logger.info(f"Saving final model to {final_model_path}")
     trainer.save_model(str(final_model_path))
 
     # Finish WandB run
     if cfg.logging.enabled:
         wandb.finish()
 
-    print("Training complete!")
+    logger.info("Training complete!")
 
 
 if __name__ == "__main__":

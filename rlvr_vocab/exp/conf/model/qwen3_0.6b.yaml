@@ -8,15 +8,17 @@ reasoning_vocab_size: 0  # 0 means baseline (no reasoning vocab), set to >0 to e
 reasoning_start_token: "<think>"
 reasoning_end_token: "</think>"
 
-# Model loading settings
-load_in_8bit: false
-load_in_4bit: false
-trust_remote_code: true
-torch_dtype: "bfloat16"  # Options: float32, float16, bfloat16
+# Model loading arguments
+model_kwargs:
+  torch_dtype: "bfloat16"  # float32, float16, bfloat16
+  trust_remote_code: true
+  load_in_8bit: false
+  load_in_4bit: false
 
-# Generation settings (for rollouts)
-max_new_tokens: 512
-temperature: 1.0
-top_p: 0.95
-do_sample: true
+# Generation arguments
+generation_kwargs:
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  do_sample: true
 
