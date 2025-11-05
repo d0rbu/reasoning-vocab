@@ -298,6 +298,7 @@ class TestConfigurationSerialization:
         resolved = OmegaConf.to_container(minimal_hydra_config, resolve=True)
 
         expected = f"{minimal_hydra_config.exp_name}_test"
+        assert isinstance(resolved, dict)
         assert resolved["test_interpolation"] == expected
 
 

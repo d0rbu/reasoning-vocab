@@ -19,7 +19,7 @@ import pytest
 import torch as th
 from datasets import Dataset
 from omegaconf import DictConfig
-from test_utils import (
+from test_utils import (  # type: ignore[import-not-found]
     assert_dataset_fields,
     create_tiny_model,
     create_tiny_tokenizer,
@@ -231,7 +231,7 @@ class TestRewardFunctions:
 
         assert len(rewards) == len(mock_completions)
         assert all(isinstance(r, float) for r in rewards)
-        assert all(0.0 <= r <= 1.0 for r in rewards)
+        assert all(isinstance(r, float) and 0.0 <= r <= 1.0 for r in rewards)
 
     def test_think_format_reward_valid(self):
         """Test think_format_reward with valid format."""
