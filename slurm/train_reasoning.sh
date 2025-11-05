@@ -37,7 +37,7 @@ cd $SCRATCH/reasoning-vocab
 source .venv/bin/activate
 
 # Run training with reasoning vocabulary (reasoning_vocab_size = vocab_size)
-# For Qwen2.5-0.6B, vocab_size is approximately 151646
+# For Qwen3-0.6B, vocab_size is approximately 151646
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun --ntasks=$SLURM_NTASKS --ntasks-per-node=$SLURM_NTASKS_PER_NODE \
