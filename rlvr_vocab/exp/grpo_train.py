@@ -20,7 +20,7 @@ from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOConfig, GRPOTrainer
-from trl.rewards import accuracy_reward
+from trl.rewards import accuracy_reward, think_format_reward
 
 
 def setup_wandb(cfg: DictConfig):
@@ -72,13 +72,13 @@ def load_model_and_tokenizer(cfg: DictConfig):
     }
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load model with kwargs from config
+    # Load model with kwargs from config (unpacking model_kwargs)
+    model_kwargs = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
+    model_kwargs["torch_dtype"] = torch_dtype  # Override with mapped dtype
+
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model.name,
-        torch_dtype=torch_dtype,
-        trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
-        load_in_8bit=cfg.model.model_kwargs.load_in_8bit,
-        load_in_4bit=cfg.model.model_kwargs.load_in_4bit,
+        **model_kwargs,
     )
 
     # Load tokenizer
@@ -97,29 +97,27 @@ def load_model_and_tokenizer(cfg: DictConfig):
         model.gradient_checkpointing_enable()
 
     num_params = sum(p.numel() for p in model.parameters()) / 1e9
-    logger.info(f"Model loaded: {model.__class__.__name__}")
-    logger.info(f"Model size: {num_params:.2f}B parameters")
+    logger.debug(f"Model loaded: {model.__class__.__name__}")
+    logger.debug(f"Model size: {num_params:.2f}B parameters")
 
     return model, tokenizer
 
 
-def preprocess_dataset(dataset, tokenizer, system_prompt: str):
+def preprocess_dataset(dataset, tokenizer):
     """
     Preprocess dataset into conversational format using chat template.
 
     Args:
         dataset: HuggingFace dataset
         tokenizer: Tokenizer with chat template support
-        system_prompt: System prompt for the assistant
 
     Returns:
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
 
     def format_example(example):
-        # Create messages in chat format
+        # Create messages in chat format (no system prompt)
         messages = [
-            {"role": "system", "content": system_prompt},
             {"role": "user", "content": example["problem"]},
         ]
 
@@ -151,12 +149,12 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer):
     # Subsample if requested
     if cfg.dataset.max_train_samples is not None:
         dataset = dataset.select(range(min(cfg.dataset.max_train_samples, len(dataset))))
-        logger.info(f"Subsampled to {len(dataset)} examples")
+        logger.debug(f"Subsampled to {len(dataset)} examples")
 
-    # Preprocess with chat template
-    dataset = preprocess_dataset(dataset, tokenizer, cfg.dataset.system_prompt)
+    # Preprocess with chat template (no system prompt)
+    dataset = preprocess_dataset(dataset, tokenizer)
 
-    logger.info(f"Dataset prepared with {len(dataset)} examples")
+    logger.debug(f"Dataset prepared with {len(dataset)} examples")
 
     return dataset
 
@@ -227,14 +225,14 @@ def main(cfg: DictConfig):
     # Create GRPO config
     training_args = create_grpo_config(cfg)
 
-    # Initialize trainer with TRL's accuracy_reward
-    logger.info("Initializing GRPOTrainer with accuracy_reward...")
+    # Initialize trainer with TRL's reward functions
+    logger.info("Initializing GRPOTrainer with accuracy_reward and think_format_reward...")
     trainer = GRPOTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         tokenizer=tokenizer,
-        reward_funcs=accuracy_reward,  # Use TRL's built-in accuracy reward
+        reward_funcs=[accuracy_reward, think_format_reward],  # Multiple TRL rewards
     )
 
     # Train

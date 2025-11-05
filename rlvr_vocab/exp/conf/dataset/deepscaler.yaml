@@ -10,7 +10,3 @@ val_split: null  # No validation split in this dataset
 # Data sampling (for faster iteration)
 max_train_samples: null  # null means use all samples
 max_val_samples: null
-
-# System prompt for chat format
-system_prompt: "You are a helpful math assistant. Solve the problem step by step and provide your final answer."
-
