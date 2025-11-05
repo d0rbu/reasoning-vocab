@@ -238,9 +238,9 @@ class TestRewardPipeline:
         assert len(acc_rewards) == len(completions)
         assert all(isinstance(r, float) for r in acc_rewards)
         # All should be correct since we used the right answers
-        assert all(
-            isinstance(r, float) and r >= 0.5 for r in acc_rewards
-        ), "Expected high rewards for correct answers"
+        assert all(isinstance(r, float) and r >= 0.5 for r in acc_rewards), (
+            "Expected high rewards for correct answers"
+        )
 
     def test_multiple_reward_functions(self):
         """Test that multiple reward functions can be applied."""
