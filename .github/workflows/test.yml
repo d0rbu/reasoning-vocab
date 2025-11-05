@@ -7,9 +7,6 @@ on:
 jobs:
   pytest:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ${{ github.event_name == 'merge_group' && fromJSON('["3.11", "3.12"]') || fromJSON('["3.12"]') }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,10 +15,10 @@ jobs:
         with:
           version: "latest"
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
 
       - name: Install dependencies
         run: uv sync --dev
@@ -34,7 +31,6 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
-        if: matrix.python-version == '3.11'
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
