@@ -81,8 +81,8 @@ def test_think_format_reward_function():
 
 @pytest.mark.skip(reason="Requires internet access to download model")
 def test_model_loading():
-    """Test that Qwen2.5-0.6B model can be loaded."""
-    model_name = "Qwen/Qwen2.5-0.6B"
+    """Test that Qwen3-0.6B model can be loaded."""
+    model_name = "Qwen/Qwen3-0.6B"
 
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
@@ -140,7 +140,7 @@ def test_hydra_config_overrides():
 @pytest.mark.skip(reason="Requires internet access to download tokenizer")
 def test_chat_template_formatting():
     """Test that chat template formatting works."""
-    model_name = "Qwen/Qwen2.5-0.6B"
+    model_name = "Qwen/Qwen3-0.6B"
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 
     # Format with chat template
