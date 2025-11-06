@@ -9,11 +9,11 @@ This module contains the extended Qwen3ForCausalLM class with:
 
 import torch as th
 import torch.nn as nn
-from transformers import Qwen2ForCausalLM
+from transformers import Qwen3ForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
-class Qwen3ReasoningForCausalLM(Qwen2ForCausalLM):
+class Qwen3ReasoningForCausalLM(Qwen3ForCausalLM):
     """
     Extended Qwen3 model with reasoning vocabulary support.
 

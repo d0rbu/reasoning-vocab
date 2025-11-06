@@ -17,9 +17,9 @@ from core.modeling_qwen3_reasoning import Qwen3ReasoningForCausalLM
 @pytest.fixture
 def tiny_config():
     """Create a tiny model config for testing."""
-    from transformers import Qwen2Config
+    from transformers import Qwen3Config
 
-    config = Qwen2Config(
+    config = Qwen3Config(
         vocab_size=1000,
         hidden_size=256,
         num_hidden_layers=2,
