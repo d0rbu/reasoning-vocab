@@ -36,9 +36,8 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, dict[str, Any]]:
         checkpoint_dir: Directory containing checkpoint subdirectories
 
     Returns:
-        Dictionary mapping step number to checkpoint data containing:
-            - 'token_ids': Tensor of generated token IDs (batch_size, seq_len)
-            - 'step': Training step number
+        Dictionary mapping step number to list of tensors of generated token IDs.
+        Each value is a list of tensors (ragged - different rollouts have different lengths).
     """
     if not checkpoint_dir.exists():
         raise FileNotFoundError(f"Checkpoint directory not found: {checkpoint_dir}")
@@ -68,7 +67,7 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, dict[str, Any]]:
 
         try:
             data = th.load(generations_file, map_location="cpu", weights_only=False)
-            checkpoints[step] = {"token_ids": data, "step": step}
+            checkpoints[step] = data
             logger.debug(f"Loaded checkpoint at step {step}")
         except Exception as e:
             logger.warning(f"Failed to load {generations_file}: {e}")
@@ -78,7 +77,9 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, dict[str, Any]]:
     return checkpoints
 
 
-def analyze_token_usage(token_ids: th.Tensor, vocab_size: int) -> tuple[int, int, float, float]:
+def analyze_token_usage(
+    token_ids: list[th.Tensor] | th.Tensor, vocab_size: int
+) -> tuple[int, int, float, float]:
     """
     Analyze token usage to determine reasoning vs. standard token distribution.
 
@@ -86,17 +87,23 @@ def analyze_token_usage(token_ids: th.Tensor, vocab_size: int) -> tuple[int, int
     Tokens with ID >= vocab_size are reasoning tokens.
 
     Args:
-        token_ids: Tensor of token IDs, shape (batch_size, seq_len) or (seq_len,)
+        token_ids: List of tensors (ragged) or single tensor of token IDs
         vocab_size: Size of the standard vocabulary (not including reasoning tokens)
 
     Returns:
         Tuple of (num_standard, num_reasoning, pct_standard, pct_reasoning)
     """
-    if token_ids.numel() == 0:
-        return 0, 0, 0.0, 0.0
-
-    # Flatten to 1D for analysis
-    flat_tokens = token_ids.flatten()
+    # Handle list of tensors (ragged case)
+    if isinstance(token_ids, list):
+        if len(token_ids) == 0:
+            return 0, 0, 0.0, 0.0
+        # Concatenate all tensors
+        flat_tokens = th.cat([t.flatten() for t in token_ids])
+    else:
+        # Handle single tensor
+        if token_ids.numel() == 0:
+            return 0, 0, 0.0, 0.0
+        flat_tokens = token_ids.flatten()
 
     # Count standard vs reasoning tokens
     num_standard = (flat_tokens < vocab_size).sum().item()
@@ -195,7 +202,7 @@ def create_stacked_area_plot(
 
 
 def visualize_vocab_usage(
-    checkpoint_dir: Path, vocab_size: int, output_dir: Path | None = None
+    checkpoint_dir: Path, vocab_size: int, output_dir: Path = Path("./fig")
 ) -> None:
     """
     Main function to visualize vocabulary usage from checkpoints.
@@ -205,8 +212,6 @@ def visualize_vocab_usage(
         vocab_size: Size of the standard vocabulary (excluding reasoning tokens)
         output_dir: Directory to save output figures (default: ./fig)
     """
-    if output_dir is None:
-        output_dir = Path("./fig")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -226,7 +231,7 @@ def visualize_vocab_usage(
     reasoning_pcts = []
 
     for step in sorted(checkpoints.keys()):
-        token_ids = checkpoints[step]["token_ids"]
+        token_ids = checkpoints[step]
 
         num_std, num_reas, pct_std, pct_reas = analyze_token_usage(token_ids, vocab_size)
 
@@ -273,8 +278,8 @@ def main():
     parser.add_argument(
         "--vocab_size",
         type=int,
-        required=True,
-        help="Size of the standard vocabulary (excluding reasoning tokens)",
+        default=151936,
+        help="Size of the standard vocabulary (excluding reasoning tokens, default: 151936 for Qwen3)",
     )
     parser.add_argument(
         "--output_dir", type=str, default="./fig", help="Directory to save output figures"
