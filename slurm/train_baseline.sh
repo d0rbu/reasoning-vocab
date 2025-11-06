@@ -7,8 +7,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --output=out/baseline-%j.out
-#SBATCH --error=out/baseline-%j.err
+#SBATCH --output=baseline-%j.out
+#SBATCH --error=baseline-%j.err
 #SBATCH --gres=gpu:h100:1
 #SBATCH --partition=gpu
 
