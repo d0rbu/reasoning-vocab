@@ -80,11 +80,8 @@ class TestLoadCheckpointOutputs:
         assert set(checkpoints.keys()) == {100, 200, 300}
 
         # Check structure of loaded data
-        for step, data in checkpoints.items():
-            assert "token_ids" in data
-            assert "step" in data
-            assert data["step"] == step
-            assert isinstance(data["token_ids"], th.Tensor)
+        for _step, data in checkpoints.items():
+            assert isinstance(data, th.Tensor)
 
     def test_load_nonexistent_directory(self):
         """Test error handling for nonexistent directory."""
@@ -201,6 +198,36 @@ class TestAnalyzeTokenUsage:
 
         assert num_std == 1  # Only 99
         assert num_reas == 2  # 100 and 101
+
+    def test_analyze_list_of_tensors(self):
+        """Test analysis with list of tensors (ragged case)."""
+        vocab_size = 100
+
+        # Create a list of tensors with different lengths
+        tensor1 = th.tensor([10, 20, 100, 110])  # 2 standard, 2 reasoning
+        tensor2 = th.tensor([30, 40, 50])  # 3 standard
+        tensor3 = th.tensor([120, 130, 140, 150, 160])  # 5 reasoning
+        token_ids = [tensor1, tensor2, tensor3]
+
+        num_std, num_reas, pct_std, pct_reas = analyze_token_usage(token_ids, vocab_size)
+
+        # Total: 12 tokens (4 + 3 + 5), 5 standard, 7 reasoning
+        assert num_std == 5
+        assert num_reas == 7
+        assert pct_std == pytest.approx(41.67, abs=0.1)
+        assert pct_reas == pytest.approx(58.33, abs=0.1)
+
+    def test_analyze_empty_list_of_tensors(self):
+        """Test analysis with empty list of tensors."""
+        vocab_size = 100
+        token_ids: list[th.Tensor] = []
+
+        num_std, num_reas, pct_std, pct_reas = analyze_token_usage(token_ids, vocab_size)
+
+        assert num_std == 0
+        assert num_reas == 0
+        assert pct_std == 0.0
+        assert pct_reas == 0.0
 
 
 class TestCreateUsagePlot:
@@ -348,7 +375,7 @@ class TestVisualizeVocabUsageIntegration:
         monkeypatch.chdir(tmp_path)
 
         # Run with default output_dir (should create ./fig)
-        visualize_vocab_usage(temp_checkpoint_dir, vocab_size, output_dir=None)
+        visualize_vocab_usage(temp_checkpoint_dir, vocab_size)
 
         # Check that ./fig was created in temp directory
         assert (tmp_path / "fig").exists()
