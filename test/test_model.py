@@ -55,7 +55,7 @@ def test_model_initialization_with_reasoning(tiny_config):
 
     assert model.standard_vocab_size == original_vocab_size
     assert model.num_reasoning_tokens == 5
-    assert model.reasoning_token_ids == tuple(reasoning_token_ids)
+    assert model.get_reasoning_token_ids() == tuple(reasoning_token_ids)
     # Vocab size should be extended
     assert model.get_input_embeddings().num_embeddings == original_vocab_size + len(
         reasoning_token_ids
@@ -193,18 +193,22 @@ def test_gradient_flow(tiny_config):
 
 
 def test_logits_processor_standard_mode(tiny_config):
-    """Test LogitsProcessor in standard mode (reasoning vocab masked)."""
+    """Test LogitsProcessor masks reasoning vocab when no think tags present."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    processor = model.get_logits_processor(use_reasoning_vocab=False)
+    # Create processor with no thinking tags configured
+    processor = model.get_logits_processor()
 
     batch_size = 2
+    seq_len = 5
     extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
+
+    input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
     logits = th.randn(batch_size, extended_vocab_size)
 
-    processed_logits = processor(None, logits)
+    processed_logits = processor(input_ids, logits)
 
     # Standard vocab should be unchanged
     assert th.allclose(processed_logits[:, :original_vocab_size], logits[:, :original_vocab_size])
@@ -214,20 +218,36 @@ def test_logits_processor_standard_mode(tiny_config):
 
 
 def test_logits_processor_reasoning_mode(tiny_config):
-    """Test LogitsProcessor in reasoning mode (all vocab available)."""
+    """Test LogitsProcessor allows reasoning vocab when think tag is open."""
     reasoning_token_ids = [10, 20, 30]
+    original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    processor = model.get_logits_processor(use_reasoning_vocab=True)
+    # Use specific token IDs for think tags
+    think_token_id = 100
+    end_think_token_id = 101
+
+    processor = model.get_logits_processor(think_token_id, end_think_token_id)
 
     batch_size = 2
-    extended_vocab_size = tiny_config.vocab_size + len(reasoning_token_ids)
+    seq_len = 5
+    extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
+
+    # Create input with think tag but no end tag
+    input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
+    input_ids[0, 2] = think_token_id  # Add think tag to first sequence
+
     logits = th.randn(batch_size, extended_vocab_size)
 
-    processed_logits = processor(None, logits)
+    processed_logits = processor(input_ids, logits)
 
-    # All logits should be unchanged
-    assert th.allclose(processed_logits, logits)
+    # First sequence (with think tag) should have all logits available
+    assert th.allclose(processed_logits[0, :original_vocab_size], logits[0, :original_vocab_size])
+    assert th.allclose(processed_logits[0, original_vocab_size:], logits[0, original_vocab_size:])
+
+    # Second sequence (no think tag) should have reasoning masked
+    assert th.allclose(processed_logits[1, :original_vocab_size], logits[1, :original_vocab_size])
+    assert th.all(processed_logits[1, original_vocab_size:] == float("-inf"))
 
 
 def test_generate_compatibility(tiny_config):
@@ -259,8 +279,8 @@ def test_generate_with_logits_processor(tiny_config):
     seq_len = 5
     input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
 
-    # Get logits processor
-    processor = model.get_logits_processor(use_reasoning_vocab=False)
+    # Get logits processor (no thinking tags, so reasoning vocab will be masked)
+    processor = model.get_logits_processor()
 
     # Test generation with processor
     with th.no_grad():

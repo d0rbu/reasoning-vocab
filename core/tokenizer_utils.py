@@ -59,35 +59,33 @@ class ReasoningTokenizer:
     def __init__(self, tokenizer: PreTrainedTokenizer, reasoning_token_ids: Sequence[int]):
         self.tokenizer = tokenizer
         self.standard_vocab_size = tokenizer.vocab_size
-        self.reasoning_token_ids = list(reasoning_token_ids)
 
-        # Create mapping from reasoning token ID to (standard token ID, multiplicity)
+        # Convert reasoning_token_ids to tensor
+        self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
+        self.reasoning_vocab_size = len(reasoning_token_ids)
+
+        # Create mapping for multiplicity tracking
         self._build_reasoning_mapping()
 
     def _build_reasoning_mapping(self):
         """
-        Build internal mappings for reasoning tokens.
+        Build internal multiplicity mapping for reasoning tokens.
 
-        Creates:
-        - reasoning_to_standard: Maps reasoning indices to standard token IDs
-        - reasoning_to_multiplicity: Maps reasoning indices to their multiplicity
+        Creates reasoning_to_multiplicity tensor that tracks how many times
+        each token appears in the reasoning vocabulary.
         """
-        # Use Counter to track token occurrences efficiently
         token_counter = Counter()
 
-        self.reasoning_to_standard = th.empty(len(self.reasoning_token_ids), dtype=th.long)
-        self.reasoning_to_multiplicity = th.empty(len(self.reasoning_token_ids), dtype=th.long)
+        self.reasoning_to_multiplicity = th.empty(self.reasoning_vocab_size, dtype=th.long)
 
-        for idx, token_id in enumerate(self.reasoning_token_ids):
-            self.reasoning_to_standard[idx] = token_id
-            # Store current count (will add 1 when retrieving multiplicity)
+        for idx, token_id in enumerate(self.reasoning_token_ids.tolist()):
             self.reasoning_to_multiplicity[idx] = token_counter[token_id]
             token_counter[token_id] += 1
 
     @property
     def vocab_size(self) -> int:
         """Total vocabulary size (standard + reasoning tokens)."""
-        return self.standard_vocab_size + len(self.reasoning_token_ids)
+        return self.standard_vocab_size + self.reasoning_vocab_size
 
     def encode(self, text: str | list[str], **kwargs) -> list[int] | th.Tensor:
         """
@@ -121,17 +119,13 @@ class ReasoningTokenizer:
         standard_ids = token_ids.clone()
         multiplicities = th.zeros_like(token_ids, dtype=th.long)
 
-        # Find reasoning tokens
         reasoning_mask = token_ids >= self.standard_vocab_size
 
         if reasoning_mask.any():
-            # Get reasoning indices
             reasoning_indices = token_ids[reasoning_mask] - self.standard_vocab_size
 
-            # Convert to standard IDs
-            standard_ids[reasoning_mask] = self.reasoning_to_standard[reasoning_indices]
+            standard_ids[reasoning_mask] = self.reasoning_token_ids[reasoning_indices]
 
-            # Get multiplicities (add 1 since we stored count starting from 0)
             multiplicities[reasoning_mask] = self.reasoning_to_multiplicity[reasoning_indices] + 1
 
         return standard_ids, multiplicities
@@ -254,11 +248,9 @@ class ReasoningTokenizer:
         Returns:
             List of decoded text strings
         """
-        # Convert to list if tensor
         if isinstance(token_ids, th.Tensor):
             token_ids = token_ids.tolist()
 
-        # Decode each sequence in parallel (list comprehension is efficient)
         return [self.decode(seq, **kwargs) for seq in token_ids]
 
     def batch_decode_with_multiplicity(
@@ -274,11 +266,9 @@ class ReasoningTokenizer:
         Returns:
             List of (decoded_text, multiplicity_info_list) tuples
         """
-        # Convert to list if tensor
         if isinstance(token_ids, th.Tensor):
             token_ids = token_ids.tolist()
 
-        # Decode each sequence with multiplicity in parallel
         return [self.decode_with_multiplicity(seq, **kwargs) for seq in token_ids]
 
     def get_token_string_and_multiplicity(self, token_id: int) -> tuple[str, int]:
@@ -291,13 +281,11 @@ class ReasoningTokenizer:
         Returns:
             Tuple of (token_string, multiplicity)
         """
-        # Early return for standard tokens
         if token_id < self.standard_vocab_size:
             return self.tokenizer.decode([token_id]), 0
 
-        # Reasoning token
         reasoning_idx = token_id - self.standard_vocab_size
-        standard_id = self.reasoning_to_standard[reasoning_idx].item()
+        standard_id = self.reasoning_token_ids[reasoning_idx].item()
         multiplicity = self.reasoning_to_multiplicity[reasoning_idx].item() + 1
         token_string = self.tokenizer.decode([standard_id])
 
