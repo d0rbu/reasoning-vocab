@@ -17,12 +17,11 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as th
-from jaxtyping import Float, Integer
 from loguru import logger
 from matplotlib.figure import Figure
 
 
-def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[Integer[th.Tensor, ...]]]:
+def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[th.Tensor]]:
     """
     Load generated outputs from training checkpoints.
 
@@ -80,7 +79,7 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[Integer[th.T
 
 
 def analyze_token_usage(
-    token_ids: list[Integer[th.Tensor, ...]] | Integer[th.Tensor, ...], vocab_size: int
+    token_ids: list[th.Tensor] | th.Tensor, vocab_size: int
 ) -> tuple[int, int, float, float]:
     """
     Analyze token usage to determine reasoning vs. standard token distribution.
@@ -119,9 +118,9 @@ def analyze_token_usage(
 
 
 def create_usage_plot(
-    steps: Integer[np.ndarray, n] | list[int],
-    standard_pcts: Float[np.ndarray, n] | list[float],
-    reasoning_pcts: Float[np.ndarray, n] | list[float],
+    steps: np.ndarray | list[int],
+    standard_pcts: np.ndarray | list[float],
+    reasoning_pcts: np.ndarray | list[float],
     title: str = "Token Vocabulary Usage Over Training",
 ) -> Figure:
     """
@@ -155,9 +154,9 @@ def create_usage_plot(
 
 
 def create_stacked_area_plot(
-    steps: Integer[np.ndarray, n] | list[int],
-    standard_counts: Integer[np.ndarray, n] | list[int],
-    reasoning_counts: Integer[np.ndarray, n] | list[int],
+    steps: np.ndarray | list[int],
+    standard_counts: np.ndarray | list[int],
+    reasoning_counts: np.ndarray | list[int],
     title: str = "Token Count Distribution Over Training",
 ) -> Figure:
     """
