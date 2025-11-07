@@ -11,7 +11,6 @@ Usage:
 
 import argparse
 from pathlib import Path
-from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -20,7 +19,7 @@ from loguru import logger
 from matplotlib.figure import Figure
 
 
-def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, dict[str, Any]]:
+def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[th.Tensor]]:
     """
     Load generated outputs from training checkpoints.
 
