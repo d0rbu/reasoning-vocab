@@ -9,17 +9,20 @@ Usage:
     python viz/visualize_vocab_usage.py --checkpoint_dir ./out/exp_name --output_dir ./fig
 """
 
+from __future__ import annotations
+
 import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch as th
+from jaxtyping import Float, Integer
 from loguru import logger
 from matplotlib.figure import Figure
 
 
-def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[th.Tensor]]:
+def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[Integer[th.Tensor, ...]]]:
     """
     Load generated outputs from training checkpoints.
 
@@ -35,7 +38,7 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[th.Tensor]]:
         checkpoint_dir: Directory containing checkpoint subdirectories
 
     Returns:
-        Dictionary mapping step number to list of tensors of generated token IDs.
+        Dictionary mapping step number to list of integer tensors of generated token IDs.
         Each value is a list of tensors (ragged - different rollouts have different lengths).
     """
     if not checkpoint_dir.exists():
@@ -77,7 +80,7 @@ def load_checkpoint_outputs(checkpoint_dir: Path) -> dict[int, list[th.Tensor]]:
 
 
 def analyze_token_usage(
-    token_ids: list[th.Tensor] | th.Tensor, vocab_size: int
+    token_ids: list[Integer[th.Tensor, ...]] | Integer[th.Tensor, ...], vocab_size: int
 ) -> tuple[int, int, float, float]:
     """
     Analyze token usage to determine reasoning vs. standard token distribution.
@@ -86,7 +89,7 @@ def analyze_token_usage(
     Tokens with ID >= vocab_size are reasoning tokens.
 
     Args:
-        token_ids: List of tensors (ragged) or single tensor of token IDs
+        token_ids: List of integer tensors (ragged) or single integer tensor of token IDs
         vocab_size: Size of the standard vocabulary (not including reasoning tokens)
 
     Returns:
@@ -116,9 +119,9 @@ def analyze_token_usage(
 
 
 def create_usage_plot(
-    steps: list[int],
-    standard_pcts: list[float],
-    reasoning_pcts: list[float],
+    steps: Integer[np.ndarray, n] | list[int],
+    standard_pcts: Float[np.ndarray, n] | list[float],
+    reasoning_pcts: Float[np.ndarray, n] | list[float],
     title: str = "Token Vocabulary Usage Over Training",
 ) -> Figure:
     """
@@ -152,9 +155,9 @@ def create_usage_plot(
 
 
 def create_stacked_area_plot(
-    steps: list[int],
-    standard_counts: list[int],
-    reasoning_counts: list[int],
+    steps: Integer[np.ndarray, n] | list[int],
+    standard_counts: Integer[np.ndarray, n] | list[int],
+    reasoning_counts: Integer[np.ndarray, n] | list[int],
     title: str = "Token Count Distribution Over Training",
 ) -> Figure:
     """
