@@ -5,32 +5,61 @@ This module contains:
 - ReasoningTokenizer class for managing reasoning token translation
 - Methods for tokenizing/detokenizing with reasoning tokens
 - Multiplicity tracking for reasoning tokens
+- TokenMultiplicityInfo dataclass for rich token information
 """
+
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 import torch as th
 from transformers import PreTrainedTokenizer
+
+
+@dataclass
+class TokenMultiplicityInfo:
+    """
+    Information about a token's multiplicity and position in decoded text.
+
+    Attributes:
+        multiplicity: Token multiplicity (0 for standard tokens, >=1 for reasoning tokens)
+        start_index: Starting character index in the decoded string
+        length: Length of the token string in characters
+    """
+
+    multiplicity: int
+    start_index: int
+    length: int
 
 
 class ReasoningTokenizer:
     """
     Tokenizer wrapper that handles both standard and reasoning vocabularies.
 
-    The reasoning tokenizer maps reasoning token IDs (>= vocab_size) to their
+    The reasoning tokenizer maps reasoning token IDs (>= standard_vocab_size) to their
     corresponding standard token IDs for detokenization, while tracking
     multiplicities for tokens that appear multiple times in the reasoning vocab.
 
     Args:
         tokenizer: Base HuggingFace tokenizer for standard vocabulary
-        reasoning_token_ids: List of standard token IDs used to initialize reasoning vocab
-        vocab_size: Size of the standard vocabulary (reasoning tokens start at vocab_size)
+        reasoning_token_ids: Sequence of standard token IDs used to initialize reasoning vocab
+
+    Example:
+        >>> from transformers import AutoTokenizer
+        >>> base_tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen3-0.6B")
+        >>> reasoning_tokenizer = ReasoningTokenizer(
+        ...     tokenizer=base_tokenizer,
+        ...     reasoning_token_ids=[10, 20, 30, 10, 20]  # Note: 10 and 20 repeat
+        ... )
+        >>> # Decode with multiplicity tracking
+        >>> token_ids = [10, base_tokenizer.vocab_size + 0, base_tokenizer.vocab_size + 3]
+        >>> text, infos = reasoning_tokenizer.decode_with_multiplicity(token_ids)
     """
 
-    def __init__(
-        self, tokenizer: PreTrainedTokenizer, reasoning_token_ids: list[int], vocab_size: int
-    ):
+    def __init__(self, tokenizer: PreTrainedTokenizer, reasoning_token_ids: Sequence[int]):
         self.tokenizer = tokenizer
-        self.vocab_size = vocab_size
-        self.reasoning_token_ids = reasoning_token_ids
+        self.standard_vocab_size = tokenizer.vocab_size
+        self.reasoning_token_ids = list(reasoning_token_ids)
 
         # Create mapping from reasoning token ID to (standard token ID, multiplicity)
         self._build_reasoning_mapping()
@@ -43,23 +72,22 @@ class ReasoningTokenizer:
         - reasoning_to_standard: Maps reasoning indices to standard token IDs
         - reasoning_to_multiplicity: Maps reasoning indices to their multiplicity
         """
-        # Track how many times each standard token appears in reasoning vocab
-        token_count = {}
+        # Use Counter to track token occurrences efficiently
+        token_counter = Counter()
 
-        self.reasoning_to_standard = th.zeros(len(self.reasoning_token_ids), dtype=th.long)
-        self.reasoning_to_multiplicity = th.zeros(len(self.reasoning_token_ids), dtype=th.long)
+        self.reasoning_to_standard = th.empty(len(self.reasoning_token_ids), dtype=th.long)
+        self.reasoning_to_multiplicity = th.empty(len(self.reasoning_token_ids), dtype=th.long)
 
         for idx, token_id in enumerate(self.reasoning_token_ids):
             self.reasoning_to_standard[idx] = token_id
+            # Store current count (will add 1 when retrieving multiplicity)
+            self.reasoning_to_multiplicity[idx] = token_counter[token_id]
+            token_counter[token_id] += 1
 
-            # Track multiplicity (how many times this token appears)
-            if token_id not in token_count:
-                token_count[token_id] = 0
-            else:
-                token_count[token_id] += 1
-
-            # Multiplicity starts at 1 for reasoning tokens (0 is for standard vocab)
-            self.reasoning_to_multiplicity[idx] = token_count[token_id] + 1
+    @property
+    def vocab_size(self) -> int:
+        """Total vocabulary size (standard + reasoning tokens)."""
+        return self.standard_vocab_size + len(self.reasoning_token_ids)
 
     def encode(self, text: str | list[str], **kwargs) -> list[int] | th.Tensor:
         """
@@ -76,94 +104,182 @@ class ReasoningTokenizer:
         """
         return self.tokenizer.encode(text, **kwargs)
 
-    def decode(
-        self, token_ids: list[int] | th.Tensor, skip_special_tokens: bool = False, **kwargs
-    ) -> str:
+    def _convert_to_standard_ids_and_multiplicities(
+        self, token_ids: th.Tensor
+    ) -> tuple[th.Tensor, th.Tensor]:
+        """
+        Convert token IDs to standard vocabulary IDs and get multiplicities.
+
+        Efficiently processes both standard and reasoning tokens in one pass.
+
+        Args:
+            token_ids: Token IDs to convert
+
+        Returns:
+            Tuple of (standard_ids, multiplicities)
+        """
+        standard_ids = token_ids.clone()
+        multiplicities = th.zeros_like(token_ids, dtype=th.long)
+
+        # Find reasoning tokens
+        reasoning_mask = token_ids >= self.standard_vocab_size
+
+        if reasoning_mask.any():
+            # Get reasoning indices
+            reasoning_indices = token_ids[reasoning_mask] - self.standard_vocab_size
+
+            # Convert to standard IDs
+            standard_ids[reasoning_mask] = self.reasoning_to_standard[reasoning_indices]
+
+            # Get multiplicities (add 1 since we stored count starting from 0)
+            multiplicities[reasoning_mask] = self.reasoning_to_multiplicity[reasoning_indices] + 1
+
+        return standard_ids, multiplicities
+
+    def convert_ids_to_tokens_and_multiplicity(
+        self, token_ids: list[int] | th.Tensor
+    ) -> tuple[list[str], list[int]]:
+        """
+        Convert token IDs to token strings and multiplicities.
+
+        Args:
+            token_ids: Sequence of token IDs
+
+        Returns:
+            Tuple of (token_strings, multiplicities)
+        """
+        # Convert to tensor if needed
+        if isinstance(token_ids, list):
+            token_ids = th.tensor(token_ids, dtype=th.long)
+
+        # Get standard IDs and multiplicities
+        standard_ids, multiplicities = self._convert_to_standard_ids_and_multiplicities(token_ids)
+
+        # Convert IDs to tokens using base tokenizer
+        tokens = self.tokenizer.convert_ids_to_tokens(standard_ids.tolist())
+
+        return tokens, multiplicities.tolist()
+
+    def convert_tokens_and_multiplicity_to_string_and_multiplicity(
+        self, tokens: list[str], multiplicities: list[int]
+    ) -> tuple[str, list[TokenMultiplicityInfo]]:
+        """
+        Convert tokens and multiplicities to a string with positional information.
+
+        Args:
+            tokens: List of token strings
+            multiplicities: List of token multiplicities
+
+        Returns:
+            Tuple of (decoded_string, multiplicity_info_list)
+        """
+        # Convert tokens to string
+        decoded_string = self.tokenizer.convert_tokens_to_string(tokens)
+
+        # Build multiplicity info with positions
+        multiplicity_infos = []
+        current_pos = 0
+
+        for token, mult in zip(tokens, multiplicities, strict=True):
+            # Decode individual token to get its string representation
+            token_str = self.tokenizer.convert_tokens_to_string([token])
+            token_len = len(token_str)
+
+            # Find token in decoded string starting from current position
+            # This handles cases where tokenizer adds/removes spaces
+            idx = decoded_string.find(token_str, current_pos)
+            if idx == -1:
+                # Token not found as-is, use current position
+                idx = current_pos
+
+            multiplicity_infos.append(
+                TokenMultiplicityInfo(multiplicity=mult, start_index=idx, length=token_len)
+            )
+
+            current_pos = idx + token_len
+
+        return decoded_string, multiplicity_infos
+
+    def decode(self, token_ids: list[int] | th.Tensor, **kwargs) -> str:
         """
         Decode token IDs to text, handling both standard and reasoning tokens.
 
-        Reasoning tokens (>= vocab_size) are converted to their corresponding
+        Reasoning tokens (>= standard_vocab_size) are converted to their corresponding
         standard tokens before decoding.
 
         Args:
             token_ids: Token IDs to decode
-            skip_special_tokens: Whether to skip special tokens
-            **kwargs: Additional arguments passed to tokenizer
+            **kwargs: Additional arguments passed to tokenizer (e.g., skip_special_tokens)
 
         Returns:
             Decoded text string
         """
-        # Convert to tensor if needed
-        if isinstance(token_ids, list):
-            token_ids = th.tensor(token_ids)
-
-        # Convert reasoning tokens to standard tokens
-        standard_ids = self._convert_to_standard_ids(token_ids)
-
-        # Decode using standard tokenizer
-        return self.tokenizer.decode(
-            standard_ids.tolist(), skip_special_tokens=skip_special_tokens, **kwargs
-        )
+        text, _ = self.decode_with_multiplicity(token_ids, **kwargs)
+        return text
 
     def decode_with_multiplicity(
-        self, token_ids: list[int] | th.Tensor, skip_special_tokens: bool = False, **kwargs
-    ) -> tuple[str, th.Tensor]:
+        self, token_ids: list[int] | th.Tensor, **kwargs
+    ) -> tuple[str, list[TokenMultiplicityInfo]]:
         """
         Decode token IDs to text with multiplicity information.
 
-        Returns both the decoded text and a tensor of multiplicities for each token.
-        Standard tokens have multiplicity 0, reasoning tokens have multiplicity >= 1.
+        Returns both the decoded text and detailed information about each token's
+        multiplicity and position in the decoded string.
 
         Args:
             token_ids: Token IDs to decode
-            skip_special_tokens: Whether to skip special tokens
-            **kwargs: Additional arguments passed to tokenizer
+            **kwargs: Additional arguments passed to tokenizer (e.g., skip_special_tokens)
 
         Returns:
-            Tuple of (decoded_text, multiplicities_tensor)
+            Tuple of (decoded_text, multiplicity_info_list)
         """
-        # Convert to tensor if needed
-        if isinstance(token_ids, list):
-            token_ids = th.tensor(token_ids)
+        # Convert IDs to tokens and multiplicities
+        tokens, multiplicities = self.convert_ids_to_tokens_and_multiplicity(token_ids)
 
-        # Get multiplicities
-        multiplicities = self._get_multiplicities(token_ids)
-
-        # Convert reasoning tokens to standard tokens
-        standard_ids = self._convert_to_standard_ids(token_ids)
-
-        # Decode using standard tokenizer
-        text = self.tokenizer.decode(
-            standard_ids.tolist(), skip_special_tokens=skip_special_tokens, **kwargs
+        # Convert tokens to string with positional info
+        text, infos = self.convert_tokens_and_multiplicity_to_string_and_multiplicity(
+            tokens, multiplicities
         )
 
-        return text, multiplicities
+        return text, infos
 
-    def batch_decode(
-        self, token_ids: list[list[int]] | th.Tensor, skip_special_tokens: bool = False, **kwargs
-    ) -> list[str]:
+    def batch_decode(self, token_ids: list[list[int]] | th.Tensor, **kwargs) -> list[str]:
         """
         Decode batch of token ID sequences.
 
         Args:
             token_ids: Batch of token ID sequences
-            skip_special_tokens: Whether to skip special tokens
-            **kwargs: Additional arguments passed to tokenizer
+            **kwargs: Additional arguments passed to tokenizer (e.g., skip_special_tokens)
 
         Returns:
             List of decoded text strings
         """
-        # Convert to tensor if needed
-        if isinstance(token_ids, list):
-            token_ids = th.tensor(token_ids)
+        # Convert to list if tensor
+        if isinstance(token_ids, th.Tensor):
+            token_ids = token_ids.tolist()
 
-        # Convert reasoning tokens to standard tokens
-        standard_ids = self._convert_to_standard_ids(token_ids)
+        # Decode each sequence in parallel (list comprehension is efficient)
+        return [self.decode(seq, **kwargs) for seq in token_ids]
 
-        # Decode using standard tokenizer
-        return self.tokenizer.batch_decode(
-            standard_ids.tolist(), skip_special_tokens=skip_special_tokens, **kwargs
-        )
+    def batch_decode_with_multiplicity(
+        self, token_ids: list[list[int]] | th.Tensor, **kwargs
+    ) -> list[tuple[str, list[TokenMultiplicityInfo]]]:
+        """
+        Decode batch of token ID sequences with multiplicity information.
+
+        Args:
+            token_ids: Batch of token ID sequences
+            **kwargs: Additional arguments passed to tokenizer (e.g., skip_special_tokens)
+
+        Returns:
+            List of (decoded_text, multiplicity_info_list) tuples
+        """
+        # Convert to list if tensor
+        if isinstance(token_ids, th.Tensor):
+            token_ids = token_ids.tolist()
+
+        # Decode each sequence with multiplicity in parallel
+        return [self.decode_with_multiplicity(seq, **kwargs) for seq in token_ids]
 
     def get_token_string_and_multiplicity(self, token_id: int) -> tuple[str, int]:
         """
@@ -175,111 +291,30 @@ class ReasoningTokenizer:
         Returns:
             Tuple of (token_string, multiplicity)
         """
-        if token_id >= self.vocab_size:
-            # Reasoning token
-            reasoning_idx = token_id - self.vocab_size
-            standard_id = self.reasoning_to_standard[reasoning_idx].item()
-            multiplicity = self.reasoning_to_multiplicity[reasoning_idx].item()
-            token_string = self.tokenizer.decode([standard_id])
-        else:
-            # Standard token
-            token_string = self.tokenizer.decode([token_id])
-            multiplicity = 0
+        # Early return for standard tokens
+        if token_id < self.standard_vocab_size:
+            return self.tokenizer.decode([token_id]), 0
+
+        # Reasoning token
+        reasoning_idx = token_id - self.standard_vocab_size
+        standard_id = self.reasoning_to_standard[reasoning_idx].item()
+        multiplicity = self.reasoning_to_multiplicity[reasoning_idx].item() + 1
+        token_string = self.tokenizer.decode([standard_id])
 
         return token_string, multiplicity
 
-    def get_token_strings_and_multiplicities(
-        self, token_ids: list[int] | th.Tensor
-    ) -> tuple[list[str], th.Tensor]:
-        """
-        Get token strings and multiplicities for a sequence of token IDs.
-
-        Args:
-            token_ids: Sequence of token IDs
-
-        Returns:
-            Tuple of (token_strings_list, multiplicities_tensor)
-        """
-        # Convert to tensor if needed
-        if isinstance(token_ids, list):
-            token_ids = th.tensor(token_ids)
-
-        # Get multiplicities
-        multiplicities = self._get_multiplicities(token_ids)
-
-        # Convert to standard IDs
-        standard_ids = self._convert_to_standard_ids(token_ids)
-
-        # Get individual token strings
-        token_strings = [self.tokenizer.decode([tid]) for tid in standard_ids.tolist()]
-
-        return token_strings, multiplicities
-
-    def _convert_to_standard_ids(self, token_ids: th.Tensor) -> th.Tensor:
-        """
-        Convert token IDs to standard vocabulary IDs.
-
-        Tokens < vocab_size are kept as-is.
-        Tokens >= vocab_size are converted to their corresponding standard token IDs.
-
-        Args:
-            token_ids: Tensor of token IDs
-
-        Returns:
-            Tensor of standard vocabulary token IDs
-        """
-        standard_ids = token_ids.clone()
-
-        # Find reasoning tokens
-        reasoning_mask = token_ids >= self.vocab_size
-
-        if reasoning_mask.any():
-            # Get reasoning indices
-            reasoning_indices = token_ids[reasoning_mask] - self.vocab_size
-
-            # Map to standard tokens
-            standard_ids[reasoning_mask] = self.reasoning_to_standard[reasoning_indices]
-
-        return standard_ids
-
-    def _get_multiplicities(self, token_ids: th.Tensor) -> th.Tensor:
-        """
-        Get multiplicity values for token IDs.
-
-        Standard tokens (< vocab_size) have multiplicity 0.
-        Reasoning tokens (>= vocab_size) have multiplicity >= 1.
-
-        Args:
-            token_ids: Tensor of token IDs
-
-        Returns:
-            Tensor of multiplicity values
-        """
-        multiplicities = th.zeros_like(token_ids)
-
-        # Find reasoning tokens
-        reasoning_mask = token_ids >= self.vocab_size
-
-        if reasoning_mask.any():
-            # Get reasoning indices
-            reasoning_indices = token_ids[reasoning_mask] - self.vocab_size
-
-            # Get multiplicities
-            multiplicities[reasoning_mask] = self.reasoning_to_multiplicity[reasoning_indices]
-
-        return multiplicities
-
+    # Property accessors for convenience
     @property
-    def pad_token_id(self) -> int | None:
+    def pad_token_id(self):
         """Get pad token ID from base tokenizer."""
         return self.tokenizer.pad_token_id
 
     @property
-    def eos_token_id(self) -> int | None:
+    def eos_token_id(self):
         """Get EOS token ID from base tokenizer."""
         return self.tokenizer.eos_token_id
 
     @property
-    def bos_token_id(self) -> int | None:
+    def bos_token_id(self):
         """Get BOS token ID from base tokenizer."""
         return self.tokenizer.bos_token_id
