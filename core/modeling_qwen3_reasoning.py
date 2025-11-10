@@ -10,8 +10,10 @@ This module contains the extended Qwen3ForCausalLM class with:
 from collections.abc import Sequence
 
 import torch as th
-from transformers import PreTrainedTokenizer, Qwen3ForCausalLM
+from transformers import Qwen3ForCausalLM
 from transformers.generation import LogitsProcessor
+
+from core.tokenizer_utils import ReasoningTokenizer
 
 
 class ReasoningVocabLogitsProcessor(LogitsProcessor):
@@ -24,9 +26,8 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
 
     Args:
         standard_vocab_size: Size of the standard vocabulary
-        tokenizer: Tokenizer for decoding sequences. Can be a ReasoningTokenizer
-            to handle tokens outside the normal vocab range, or a standard tokenizer
-            for sequences containing only standard vocabulary tokens.
+        tokenizer: ReasoningTokenizer instance for decoding sequences with
+            support for tokens outside the normal vocab range (reasoning tokens).
         think_tag: String pattern for opening thinking tag (default: "<think>")
         end_think_tag: String pattern for closing thinking tag (default: "</think>")
     """
@@ -34,7 +35,7 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
     def __init__(
         self,
         standard_vocab_size: int,
-        tokenizer: PreTrainedTokenizer,
+        tokenizer: ReasoningTokenizer,
         think_tag: str = "<think>",
         end_think_tag: str = "</think>",
     ):
