@@ -17,6 +17,7 @@ from core.modeling_qwen3_reasoning import (
     ReasoningVocabLogitsProcessor,
 )
 from core.reasoning_vocab_utils import get_reasoning_token_ids
+from core.tokenizer_utils import ReasoningTokenizer
 
 
 @pytest.fixture
@@ -38,14 +39,11 @@ def tiny_config():
 
 
 @pytest.fixture
-def mock_tokenizer():
-    """Create a mock tokenizer for testing."""
-    from unittest.mock import MagicMock
+def gpt2_tokenizer():
+    """Create a GPT-2 tokenizer for testing."""
+    from transformers import AutoTokenizer
 
-    tokenizer = MagicMock()
-    tokenizer.vocab_size = 1000
-    tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence"
-    return tokenizer
+    return AutoTokenizer.from_pretrained("gpt2")
 
 
 def test_model_initialization_no_reasoning(tiny_config):
@@ -204,22 +202,25 @@ def test_gradient_flow(tiny_config):
     assert model.lm_head.weight.grad.abs().sum() > 0
 
 
-def test_logits_processor_standard_mode(tiny_config, mock_tokenizer):
+def test_logits_processor_standard_mode(tiny_config, gpt2_tokenizer):
     """Test LogitsProcessor masks reasoning vocab when no think tags present."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    # Mock tokenizer that returns text without think tags
-    mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence without tags"
+    # Create reasoning tokenizer wrapper
+    reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
-    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, mock_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, reasoning_tokenizer)
 
     batch_size = 2
     seq_len = 5
     extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
 
-    input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
+    # Create input without think tags - just use GPT-2 vocab tokens
+    input_ids = th.randint(
+        0, min(gpt2_tokenizer.vocab_size, original_vocab_size), (batch_size, seq_len)
+    )
     logits = th.randn(batch_size, extended_vocab_size)
 
     processed_logits = processor(input_ids, logits)
@@ -231,36 +232,40 @@ def test_logits_processor_standard_mode(tiny_config, mock_tokenizer):
     assert th.all(processed_logits[:, original_vocab_size:] == float("-inf"))
 
 
-def test_logits_processor_reasoning_mode(tiny_config, mock_tokenizer):
+def test_logits_processor_reasoning_mode(tiny_config, gpt2_tokenizer):
     """Test LogitsProcessor allows reasoning vocab when think tag is open."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    # Mock tokenizer that returns different text based on a marker token (999)
-    def mock_decode(ids, skip_special_tokens=False):
-        # Convert ids to tensor if needed
-        if not isinstance(ids, th.Tensor):
-            ids = th.tensor(ids)
-        # Check if sequence contains marker token 999
-        if 999 in ids:
-            return "text with <think> tag"
-        return "text without tags"
-
-    mock_tokenizer.decode = mock_decode
+    # Create reasoning tokenizer wrapper
+    reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
     processor = ReasoningVocabLogitsProcessor(
-        model.standard_vocab_size, mock_tokenizer, "<think>", "</think>"
+        model.standard_vocab_size, reasoning_tokenizer, "<think>", "</think>"
     )
 
     batch_size = 2
-    seq_len = 5
     extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
 
-    # Create input - first sequence will have marker token to get <think> tag
-    input_ids = th.randint(1, 998, (batch_size, seq_len))
-    input_ids[0, 2] = 999  # Mark first sequence to return text with <think>
+    # First sequence: encode "<think>" to get actual tokens
+    think_text = "<think> some reasoning"
+    think_ids = gpt2_tokenizer.encode(think_text, return_tensors="pt")[0]
 
+    # Second sequence: regular text without tags
+    normal_text = "just regular text"
+    normal_ids = gpt2_tokenizer.encode(normal_text, return_tensors="pt")[0]
+
+    # Pad to same length
+    max_len = max(len(think_ids), len(normal_ids))
+    think_ids = th.nn.functional.pad(
+        think_ids, (0, max_len - len(think_ids)), value=gpt2_tokenizer.eos_token_id
+    )
+    normal_ids = th.nn.functional.pad(
+        normal_ids, (0, max_len - len(normal_ids)), value=gpt2_tokenizer.eos_token_id
+    )
+
+    input_ids = th.stack([think_ids, normal_ids])
     logits = th.randn(batch_size, extended_vocab_size)
 
     processed_logits = processor(input_ids, logits)
@@ -292,7 +297,7 @@ def test_generate_compatibility(tiny_config):
     assert output.shape[1] > seq_len
 
 
-def test_generate_with_logits_processor(tiny_config, mock_tokenizer):
+def test_generate_with_logits_processor(tiny_config, gpt2_tokenizer):
     """Test generation with LogitsProcessor to control reasoning vocab."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
@@ -301,13 +306,15 @@ def test_generate_with_logits_processor(tiny_config, mock_tokenizer):
 
     batch_size = 1
     seq_len = 5
-    input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
+    input_ids = th.randint(
+        0, min(gpt2_tokenizer.vocab_size, original_vocab_size), (batch_size, seq_len)
+    )
 
-    # Mock tokenizer that returns text without think tags
-    mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "text without tags"
+    # Create reasoning tokenizer wrapper
+    reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
     # Get logits processor (no thinking tags, so reasoning vocab will be masked)
-    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, mock_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, reasoning_tokenizer)
 
     # Test generation with processor
     with th.no_grad():
