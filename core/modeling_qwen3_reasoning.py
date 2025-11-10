@@ -24,7 +24,9 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
 
     Args:
         standard_vocab_size: Size of the standard vocabulary
-        tokenizer: Tokenizer for decoding sequences
+        tokenizer: Tokenizer for decoding sequences. Can be a ReasoningTokenizer
+            to handle tokens outside the normal vocab range, or a standard tokenizer
+            for sequences containing only standard vocabulary tokens.
         think_tag: String pattern for opening thinking tag (default: "<think>")
         end_think_tag: String pattern for closing thinking tag (default: "</think>")
     """
@@ -105,11 +107,7 @@ class Qwen3ReasoningVocabForCausalLM(Qwen3ForCausalLM):
         self.standard_vocab_size = original_vocab_size
 
         # Convert reasoning_token_ids to tensor and store
-        if len(reasoning_token_ids) > 0:
-            self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
-        else:
-            self.reasoning_token_ids = th.tensor([], dtype=th.long)
-
+        self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
         self.reasoning_vocab_size = len(reasoning_token_ids)
 
         # Extend embeddings if reasoning tokens are provided
