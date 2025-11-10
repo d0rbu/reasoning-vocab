@@ -2,10 +2,10 @@
 Tests for token entropy visualization.
 
 This module tests:
-- Entropy computation from embeddings
-- Checkpoint loading and embedding extraction
+- Output entropy computation from logits
+- Token entropy aggregation from validation data
 - Trajectory computation across checkpoints
-- Plot generation and file output
+- Plot generation
 """
 
 from unittest.mock import MagicMock, patch
@@ -13,543 +13,500 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 import torch as th
-from transformers import AutoModelForCausalLM
+from datasets import Dataset
 
 from viz.visualize_token_entropy import (
-    compute_embedding_entropy,
-    compute_entropy_trajectory,
-    load_checkpoint_embeddings,
-    plot_entropy_comparison,
-    visualize_token_entropy,
+    aggregate_token_statistics,
+    compute_output_entropy,
+    compute_token_entropies_for_checkpoint,
+    plot_token_entropy_trajectories,
 )
 
 
 class TestEntropyComputation:
-    """Tests for entropy computation functions."""
+    """Tests for output entropy computation."""
 
-    def test_compute_embedding_entropy_uniform(self):
-        """Test entropy computation for uniform distribution."""
-        # Uniform distribution should have maximum entropy
-        embedding = th.zeros(100)  # Softmax will make this uniform
-        entropy = compute_embedding_entropy(embedding)
+    def test_compute_output_entropy_uniform(self):
+        """Test entropy for uniform distribution."""
+        # Create uniform logits (all zeros -> uniform softmax)
+        logits = th.zeros(10, 20, 100)  # [batch, seq_len, vocab_size]
+        entropy = compute_output_entropy(logits)
 
-        # For uniform distribution over n items: H = log(n)
+        # Uniform distribution over 100 items: H = log(100)
         expected_entropy = np.log(100)
-        assert np.isclose(entropy, expected_entropy, rtol=0.01)
+        assert th.allclose(entropy, th.tensor(expected_entropy, dtype=th.float32), rtol=0.01)
+        assert entropy.shape == (10, 20)
 
-    def test_compute_embedding_entropy_peaked(self):
-        """Test entropy computation for peaked distribution."""
-        # Create a strongly peaked distribution
-        embedding = th.zeros(100)
-        embedding[0] = 10.0  # One very high value
+    def test_compute_output_entropy_peaked(self):
+        """Test entropy for peaked distribution."""
+        logits = th.zeros(5, 10, 50)
+        # Make one logit very large (peaked distribution)
+        logits[:, :, 0] = 10.0
 
-        entropy = compute_embedding_entropy(embedding)
+        entropy = compute_output_entropy(logits)
 
         # Peaked distribution should have low entropy
-        assert entropy < 1.0
+        assert th.all(entropy < 1.0)
+        assert entropy.shape == (5, 10)
 
-    def test_compute_embedding_entropy_deterministic(self):
-        """Test that entropy computation is deterministic."""
-        embedding = th.randn(50)
+    def test_compute_output_entropy_batched(self):
+        """Test entropy computation with batched inputs."""
+        batch_sizes = [1, 4, 16]
+        seq_len = 8
+        vocab_size = 100
 
-        entropy1 = compute_embedding_entropy(embedding)
-        entropy2 = compute_embedding_entropy(embedding)
+        for batch_size in batch_sizes:
+            logits = th.randn(batch_size, seq_len, vocab_size)
+            entropy = compute_output_entropy(logits)
 
-        assert entropy1 == entropy2
+            assert entropy.shape == (batch_size, seq_len)
+            assert th.all(entropy >= 0)
 
-    def test_compute_embedding_entropy_positive(self):
-        """Test that entropy is always non-negative."""
-        for _ in range(10):
-            embedding = th.randn(100)
-            entropy = compute_embedding_entropy(embedding)
-            assert entropy >= 0.0
+    def test_compute_output_entropy_numerical_stability(self):
+        """Test that entropy computation handles extreme values."""
+        # Very large logits
+        logits = th.randn(2, 5, 50) * 100
+        entropy = compute_output_entropy(logits)
+        assert th.all(th.isfinite(entropy))
 
-    def test_compute_embedding_entropy_different_sizes(self):
-        """Test entropy computation with different embedding sizes."""
-        for size in [10, 50, 100, 500]:
-            embedding = th.randn(size)
-            entropy = compute_embedding_entropy(embedding)
-            assert entropy >= 0.0
-            # Entropy should be bounded by log(size)
-            assert entropy <= np.log(size) + 1.0  # Small tolerance
+        # Very small logits
+        logits = th.randn(2, 5, 50) * 0.01
+        entropy = compute_output_entropy(logits)
+        assert th.all(th.isfinite(entropy))
 
 
-class TestCheckpointLoading:
-    """Tests for checkpoint loading and embedding extraction."""
+class TestTokenEntropyAggregation:
+    """Tests for aggregating token entropies from model outputs."""
 
     @pytest.fixture
-    def mock_model_standard(self):
-        """Create a mock model with standard embeddings."""
-        model = MagicMock(spec=AutoModelForCausalLM)
+    def mock_model(self):
+        """Create a mock model that returns predictable outputs."""
+        model = MagicMock()
 
-        # Create mock embedding layers
-        embed_tokens = MagicMock()
-        embed_tokens.weight = th.randn(1000, 128)
+        def mock_forward(input_ids=None, attention_mask=None, **kwargs):
+            # Handle case where input_ids is a mock or doesn't have shape
+            if hasattr(input_ids, "shape") and len(input_ids.shape) == 2:
+                batch_size, seq_len = input_ids.shape
+            else:
+                # Fallback for mocked inputs
+                batch_size, seq_len = 2, 10
 
-        lm_head = MagicMock()
-        lm_head.weight = th.randn(1000, 128)
+            vocab_size = 1000
 
-        # Set up model structure (GPT-2 style)
-        model.transformer = MagicMock()
-        model.transformer.wte = embed_tokens
-        model.lm_head = lm_head
+            # Create mock logits
+            logits = th.randn(batch_size, seq_len, vocab_size)
 
+            # Return mock output
+            output = MagicMock()
+            output.logits = logits
+            return output
+
+        model.side_effect = mock_forward
+        model.eval = MagicMock(return_value=None)
+        model.to = MagicMock(return_value=model)
         return model
 
     @pytest.fixture
-    def mock_model_reasoning(self):
-        """Create a mock model with reasoning vocab."""
-        model = MagicMock(spec=AutoModelForCausalLM)
+    def mock_tokenizer(self):
+        """Create a mock tokenizer."""
+        tokenizer = MagicMock()
+        tokenizer.pad_token_id = 0
+        tokenizer.bos_token_id = 1
+        tokenizer.eos_token_id = 2
 
-        # Standard embeddings
-        embed_tokens = MagicMock()
-        embed_tokens.weight = th.randn(1000, 128)
+        def mock_call(texts, **kwargs):
+            # Simple mock tokenization
+            batch_size = len(texts)
+            seq_len = 10
 
-        lm_head = MagicMock()
-        lm_head.weight = th.randn(1000, 128)
+            input_ids = th.randint(3, 100, (batch_size, seq_len))
+            attention_mask = th.ones(batch_size, seq_len, dtype=th.long)
 
-        # Reasoning embeddings
-        reasoning_embed = MagicMock()
-        reasoning_embed.weight = th.randn(500, 128)
+            # Create a proper dict-like object that supports indexing and attributes
+            class MockEncoding:
+                def __init__(self, input_ids, attention_mask):
+                    self.input_ids = input_ids
+                    self.attention_mask = attention_mask
+                    self._dict = {"input_ids": input_ids, "attention_mask": attention_mask}
 
-        reasoning_unembed = MagicMock()
-        reasoning_unembed.weight = th.randn(128, 500)
+                def __getitem__(self, key):
+                    return self._dict[key]
 
-        # Set up model structure
-        model.model = MagicMock()
-        model.model.embed_tokens = embed_tokens
-        model.lm_head = lm_head
-        model.reasoning_embed = reasoning_embed
-        model.reasoning_unembed = reasoning_unembed
+                def to(self, device):
+                    # Return tensors directly (they handle .to())
+                    return self
 
-        return model
+            encoding = MockEncoding(input_ids, attention_mask)
+            return encoding
 
-    @patch("viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained")
-    def test_load_checkpoint_embeddings_standard(
-        self, mock_from_pretrained, mock_model_standard, tmp_path
-    ):
-        """Test loading standard token embeddings from checkpoint."""
-        mock_from_pretrained.return_value = mock_model_standard
+        tokenizer.side_effect = mock_call
+        tokenizer.decode = lambda ids: f"token_{ids[0]}"
 
-        checkpoint_path = tmp_path / "checkpoint-100"
-        checkpoint_path.mkdir()
-
-        token_id = 42
-
-        embedding_vec, unembedding_vec = load_checkpoint_embeddings(
-            checkpoint_path, token_id, is_reasoning_token=False
-        )
-
-        # Verify shapes
-        assert embedding_vec.shape == (128,)
-        assert unembedding_vec.shape == (128,)
-
-        # Verify we got the right token
-        expected_embedding = mock_model_standard.transformer.wte.weight[token_id]
-        expected_unembedding = mock_model_standard.lm_head.weight[token_id]
-
-        assert th.allclose(embedding_vec, expected_embedding)
-        assert th.allclose(unembedding_vec, expected_unembedding)
-
-    @patch("viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained")
-    def test_load_checkpoint_embeddings_reasoning(
-        self, mock_from_pretrained, mock_model_reasoning, tmp_path
-    ):
-        """Test loading reasoning token embeddings from checkpoint."""
-        mock_from_pretrained.return_value = mock_model_reasoning
-
-        checkpoint_path = tmp_path / "checkpoint-200"
-        checkpoint_path.mkdir()
-
-        token_id = 10
-
-        embedding_vec, unembedding_vec = load_checkpoint_embeddings(
-            checkpoint_path, token_id, is_reasoning_token=True
-        )
-
-        # Verify shapes
-        assert embedding_vec.shape == (128,)
-        assert unembedding_vec.shape == (128,)
-
-        # Verify we got the right reasoning token
-        expected_embedding = mock_model_reasoning.reasoning_embed.weight[token_id]
-        expected_unembedding = mock_model_reasoning.reasoning_unembed.weight[:, token_id]
-
-        assert th.allclose(embedding_vec, expected_embedding)
-        assert th.allclose(unembedding_vec, expected_unembedding)
-
-    @patch("viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained")
-    def test_load_checkpoint_embeddings_no_reasoning_vocab(
-        self, mock_from_pretrained, mock_model_standard, tmp_path
-    ):
-        """Test error when trying to load reasoning token from non-reasoning model."""
-        mock_from_pretrained.return_value = mock_model_standard
-
-        checkpoint_path = tmp_path / "checkpoint-100"
-        checkpoint_path.mkdir()
-
-        with pytest.raises(ValueError, match="does not have reasoning_embed"):
-            load_checkpoint_embeddings(checkpoint_path, 10, is_reasoning_token=True)
-
-
-class TestTrajectoryComputation:
-    """Tests for entropy trajectory computation."""
+        return tokenizer
 
     @pytest.fixture
-    def mock_checkpoints(self, tmp_path):
-        """Create mock checkpoint directories."""
-        checkpoints = []
-        for step in [100, 200, 300, 400, 500]:
-            checkpoint_dir = tmp_path / f"checkpoint-{step}"
-            checkpoint_dir.mkdir()
-            checkpoints.append(checkpoint_dir)
-        return checkpoints
+    def mock_dataset(self):
+        """Create a mock validation dataset."""
+        data = [{"text": f"Sample text {i}"} for i in range(20)]
+        return Dataset.from_list(data)
 
-    @patch("viz.visualize_token_entropy.load_checkpoint_embeddings")
-    @patch("viz.visualize_token_entropy.compute_embedding_entropy")
-    def test_compute_entropy_trajectory_basic(self, mock_entropy, mock_load, mock_checkpoints):
-        """Test basic entropy trajectory computation."""
-        # Mock embedding loading to return simple vectors
-        mock_load.return_value = (th.randn(128), th.randn(128))
-
-        # Mock entropy computation to return sequential values
-        mock_entropy.side_effect = [1.0, 1.5, 2.0, 2.5, 3.0]
-
-        steps, entropies = compute_entropy_trajectory(
-            mock_checkpoints, token_id=42, is_reasoning_token=False, use_unembedding=False
+    def test_compute_token_entropies_basic(self, mock_model, mock_tokenizer, mock_dataset):
+        """Test basic token entropy computation."""
+        token_entropies = compute_token_entropies_for_checkpoint(
+            mock_model,
+            mock_tokenizer,
+            mock_dataset,
+            max_samples=5,
+            batch_size=2,
+            device="cpu",
         )
 
-        # Verify we got all checkpoints
-        assert steps == [100, 200, 300, 400, 500]
-        assert entropies == [1.0, 1.5, 2.0, 2.5, 3.0]
+        # Should have computed entropies for multiple tokens
+        assert len(token_entropies) > 0
 
-        # Verify load_checkpoint_embeddings was called correctly
-        assert mock_load.call_count == 5
+        # Each token should have a list of entropy values
+        for _token_id, entropies in token_entropies.items():
+            assert isinstance(entropies, list)
+            assert len(entropies) > 0
+            assert all(isinstance(e, float) for e in entropies)
+            assert all(e >= 0 for e in entropies)
 
-    @patch("viz.visualize_token_entropy.load_checkpoint_embeddings")
-    def test_compute_entropy_trajectory_use_unembedding(self, mock_load, mock_checkpoints):
-        """Test that unembedding is used when specified."""
-        embedding_vec = th.zeros(128)
-        unembedding_vec = th.ones(128)
-        mock_load.return_value = (embedding_vec, unembedding_vec)
+    def test_compute_token_entropies_respects_max_samples(
+        self, mock_model, mock_tokenizer, mock_dataset
+    ):
+        """Test that max_samples parameter is respected."""
+        max_samples = 3
 
-        # Use unembedding
-        steps, entropies = compute_entropy_trajectory(
-            mock_checkpoints, token_id=42, is_reasoning_token=False, use_unembedding=True
-        )
+        with patch("viz.visualize_token_entropy.tqdm") as mock_tqdm:
+            # Make tqdm return the iterable unchanged
+            mock_tqdm.side_effect = lambda x, **kwargs: x
 
-        # Entropy from unembedding (all ones) should be different from embedding (all zeros)
-        # Both will be log(128) after softmax makes them uniform, but good to check computation happens
-        assert len(entropies) == 5
-        assert all(e > 0 for e in entropies)
-
-    @patch("viz.visualize_token_entropy.load_checkpoint_embeddings")
-    def test_compute_entropy_trajectory_error_handling(self, mock_load, mock_checkpoints):
-        """Test that errors in loading checkpoints are handled gracefully."""
-        # Make one checkpoint fail
-        mock_load.side_effect = [
-            (th.randn(128), th.randn(128)),
-            (th.randn(128), th.randn(128)),
-            RuntimeError("Failed to load"),
-            (th.randn(128), th.randn(128)),
-            (th.randn(128), th.randn(128)),
-        ]
-
-        steps, entropies = compute_entropy_trajectory(
-            mock_checkpoints, token_id=42, is_reasoning_token=False, use_unembedding=False
-        )
-
-        # Should have 4 successful checkpoints
-        assert len(steps) == 4
-        assert len(entropies) == 4
-        # Should skip step 300
-        assert 300 not in steps
-
-    def test_compute_entropy_trajectory_invalid_checkpoint_names(self, tmp_path):
-        """Test handling of checkpoints with invalid naming."""
-        # Create checkpoints with various naming issues
-        invalid_checkpoints = [
-            tmp_path / "checkpoint-100",  # Valid
-            tmp_path / "checkpoint-abc",  # Invalid: not a number
-            tmp_path / "checkpoint-200",  # Valid
-            tmp_path / "not-a-checkpoint",  # Invalid: wrong format
-        ]
-
-        for checkpoint in invalid_checkpoints:
-            checkpoint.mkdir()
-
-        with patch("viz.visualize_token_entropy.load_checkpoint_embeddings") as mock_load:
-            mock_load.return_value = (th.randn(128), th.randn(128))
-
-            steps, entropies = compute_entropy_trajectory(
-                invalid_checkpoints, token_id=42, is_reasoning_token=False, use_unembedding=False
+            token_entropies = compute_token_entropies_for_checkpoint(
+                mock_model,
+                mock_tokenizer,
+                mock_dataset,
+                max_samples=max_samples,
+                batch_size=2,
+                device="cpu",
             )
 
-            # Should only process valid checkpoints
-            assert steps == [100, 200]
+        # Should have processed at most max_samples
+        assert len(token_entropies) > 0
+
+    def test_compute_token_entropies_filters_special_tokens(
+        self, mock_model, mock_tokenizer, mock_dataset
+    ):
+        """Test that special tokens are filtered out."""
+        token_entropies = compute_token_entropies_for_checkpoint(
+            mock_model,
+            mock_tokenizer,
+            mock_dataset,
+            max_samples=10,
+            batch_size=2,
+            device="cpu",
+        )
+
+        # Should not contain pad or bos tokens
+        assert mock_tokenizer.pad_token_id not in token_entropies
+        assert mock_tokenizer.bos_token_id not in token_entropies
+
+    def test_compute_token_entropies_different_dataset_formats(self, mock_model, mock_tokenizer):
+        """Test handling different dataset field names."""
+        # Test with 'problem' field
+        dataset_problem = Dataset.from_list([{"problem": f"Problem {i}"} for i in range(5)])
+
+        token_entropies = compute_token_entropies_for_checkpoint(
+            mock_model, mock_tokenizer, dataset_problem, max_samples=5, batch_size=2, device="cpu"
+        )
+        assert len(token_entropies) > 0
+
+        # Test with 'question' field
+        dataset_question = Dataset.from_list([{"question": f"Question {i}"} for i in range(5)])
+
+        token_entropies = compute_token_entropies_for_checkpoint(
+            mock_model, mock_tokenizer, dataset_question, max_samples=5, batch_size=2, device="cpu"
+        )
+        assert len(token_entropies) > 0
+
+
+class TestStatisticsAggregation:
+    """Tests for aggregating token entropy statistics."""
+
+    def test_aggregate_token_statistics_basic(self):
+        """Test basic statistics aggregation."""
+        token_entropies = {
+            10: [1.0, 1.5, 2.0, 1.8, 1.2],
+            20: [3.0, 3.2, 2.9, 3.1],
+            30: [0.5],
+        }
+
+        stats = aggregate_token_statistics(token_entropies)
+
+        # Check structure
+        assert len(stats) == 3
+        assert 10 in stats
+        assert 20 in stats
+        assert 30 in stats
+
+        # Check stats for token 10
+        assert "mean" in stats[10]
+        assert "std" in stats[10]
+        assert "count" in stats[10]
+        assert "min" in stats[10]
+        assert "max" in stats[10]
+
+        # Verify values
+        assert np.isclose(stats[10]["mean"], np.mean([1.0, 1.5, 2.0, 1.8, 1.2]))
+        assert stats[10]["count"] == 5
+        assert stats[10]["min"] == 1.0
+        assert stats[10]["max"] == 2.0
+
+    def test_aggregate_token_statistics_single_value(self):
+        """Test statistics with single value."""
+        token_entropies = {42: [2.5]}
+
+        stats = aggregate_token_statistics(token_entropies)
+
+        assert stats[42]["mean"] == 2.5
+        assert stats[42]["std"] == 0.0
+        assert stats[42]["count"] == 1
+        assert stats[42]["min"] == 2.5
+        assert stats[42]["max"] == 2.5
+
+    def test_aggregate_token_statistics_empty_lists(self):
+        """Test that empty lists are skipped."""
+        token_entropies = {
+            10: [1.0, 2.0],
+            20: [],  # Empty list
+            30: [3.0],
+        }
+
+        stats = aggregate_token_statistics(token_entropies)
+
+        # Empty list should be skipped
+        assert 20 not in stats
+        assert 10 in stats
+        assert 30 in stats
+
+    def test_aggregate_token_statistics_large_variance(self):
+        """Test statistics with high variance."""
+        token_entropies = {
+            100: [0.1, 0.1, 0.1, 10.0, 10.0, 10.0]  # Bimodal distribution
+        }
+
+        stats = aggregate_token_statistics(token_entropies)
+
+        assert stats[100]["count"] == 6
+        assert stats[100]["std"] > 0
+        assert stats[100]["min"] == 0.1
+        assert stats[100]["max"] == 10.0
 
 
 class TestPlotting:
     """Tests for plotting functions."""
 
-    def test_plot_entropy_comparison_basic(self, tmp_path):
-        """Test basic plot generation."""
-        baseline_data = ([100, 200, 300], [2.0, 2.5, 3.0])
-        standard_data = ([100, 200, 300], [2.1, 2.4, 2.8])
-        reasoning_data = ([100, 200, 300], [3.0, 3.5, 4.0])
+    @pytest.fixture
+    def mock_tokenizer(self):
+        """Create a mock tokenizer for plotting."""
+        tokenizer = MagicMock()
+        tokenizer.decode = lambda ids: f"token_{ids[0]}"
+        return tokenizer
 
-        output_path = tmp_path / "test_plot.png"
+    @pytest.fixture
+    def sample_trajectories(self):
+        """Create sample trajectory data."""
+        baseline = {
+            100: {
+                10: {"mean": 2.0, "std": 0.5, "count": 50},
+                20: {"mean": 3.0, "std": 0.3, "count": 30},
+            },
+            200: {
+                10: {"mean": 1.8, "std": 0.4, "count": 55},
+                20: {"mean": 2.8, "std": 0.3, "count": 35},
+            },
+            300: {
+                10: {"mean": 1.5, "std": 0.3, "count": 60},
+                20: {"mean": 2.5, "std": 0.2, "count": 40},
+            },
+        }
 
-        plot_entropy_comparison(
-            baseline_data,
-            standard_data,
-            reasoning_data,
-            token_str="test_token",
-            output_path=output_path,
-            use_unembedding=False,
+        reasoning = {
+            100: {
+                10: {"mean": 2.1, "std": 0.6, "count": 50},
+                20: {"mean": 3.2, "std": 0.4, "count": 30},
+            },
+            200: {
+                10: {"mean": 1.7, "std": 0.5, "count": 55},
+                20: {"mean": 2.7, "std": 0.3, "count": 35},
+            },
+            300: {
+                10: {"mean": 1.3, "std": 0.4, "count": 60},
+                20: {"mean": 2.3, "std": 0.3, "count": 40},
+            },
+        }
+
+        return baseline, reasoning
+
+    def test_plot_token_entropy_trajectories_basic(
+        self, sample_trajectories, mock_tokenizer, tmp_path
+    ):
+        """Test basic trajectory plotting."""
+        baseline, reasoning = sample_trajectories
+        token_ids = [10, 20]
+        output_dir = tmp_path / "plots"
+
+        plot_token_entropy_trajectories(
+            baseline, reasoning, token_ids, mock_tokenizer, output_dir, top_k=20
         )
 
-        # Verify plot was saved
-        assert output_path.exists()
+        # Check that plots were created
+        assert output_dir.exists()
+        plot_files = list(output_dir.glob("*.png"))
+        assert len(plot_files) == 2  # One for each token
 
-    def test_plot_entropy_comparison_empty_data(self, tmp_path):
-        """Test plot generation with some empty datasets."""
-        baseline_data = ([], [])  # No baseline data
-        standard_data = ([100, 200], [2.0, 2.5])
-        reasoning_data = ([100, 200], [3.0, 3.5])
+    def test_plot_token_entropy_trajectories_top_k(
+        self, sample_trajectories, mock_tokenizer, tmp_path
+    ):
+        """Test that top_k parameter limits number of plots."""
+        baseline, reasoning = sample_trajectories
 
-        output_path = tmp_path / "test_plot_partial.png"
+        # Create many token IDs
+        token_ids = list(range(100))
 
-        # Should not raise an error
-        plot_entropy_comparison(
-            baseline_data,
-            standard_data,
-            reasoning_data,
-            token_str="test_token",
-            output_path=output_path,
-            use_unembedding=False,
+        # Add data for these tokens to reasoning trajectory
+        for step in reasoning.keys():
+            for tid in token_ids:
+                reasoning[step][tid] = {"mean": 2.0, "std": 0.5, "count": 10 * tid}
+
+        output_dir = tmp_path / "plots_topk"
+
+        plot_token_entropy_trajectories(
+            baseline, reasoning, token_ids, mock_tokenizer, output_dir, top_k=10
         )
 
-        assert output_path.exists()
+        # Should only create 10 plots (top_k)
+        plot_files = list(output_dir.glob("*.png"))
+        assert len(plot_files) == 10
 
-    def test_plot_entropy_comparison_unembedding(self, tmp_path):
-        """Test plot generation for unembedding layer."""
-        data = ([100, 200], [2.0, 2.5])
+    def test_plot_token_entropy_trajectories_no_baseline(
+        self, sample_trajectories, mock_tokenizer, tmp_path
+    ):
+        """Test plotting with no baseline data."""
+        _, reasoning = sample_trajectories
+        baseline_empty = {}
+        token_ids = [10, 20]
+        output_dir = tmp_path / "plots_no_baseline"
 
-        output_path = tmp_path / "test_plot_unembed.png"
-
-        plot_entropy_comparison(
-            data,
-            data,
-            data,
-            token_str="test_token",
-            output_path=output_path,
-            use_unembedding=True,
+        # Should not raise error
+        plot_token_entropy_trajectories(
+            baseline_empty, reasoning, token_ids, mock_tokenizer, output_dir, top_k=20
         )
 
-        assert output_path.exists()
+        assert output_dir.exists()
+        plot_files = list(output_dir.glob("*.png"))
+        assert len(plot_files) == 2
 
-    def test_plot_creates_output_directory(self, tmp_path):
-        """Test that plot function creates output directory if needed."""
-        output_path = tmp_path / "nested" / "dir" / "plot.png"
+    def test_plot_token_entropy_trajectories_creates_directory(
+        self, sample_trajectories, mock_tokenizer, tmp_path
+    ):
+        """Test that output directory is created if it doesn't exist."""
+        baseline, reasoning = sample_trajectories
+        output_dir = tmp_path / "nested" / "dir" / "plots"
 
-        data = ([100, 200], [2.0, 2.5])
-        plot_entropy_comparison(data, data, data, "token", output_path, False)
+        plot_token_entropy_trajectories(
+            baseline, reasoning, [10], mock_tokenizer, output_dir, top_k=20
+        )
 
-        assert output_path.exists()
-        assert output_path.parent.exists()
+        assert output_dir.exists()
 
 
-class TestVisualizationPipeline:
-    """Tests for the main visualization pipeline."""
+class TestIntegration:
+    """Integration tests for the full pipeline."""
 
     @pytest.fixture
     def mock_checkpoint_structure(self, tmp_path):
-        """Create a complete mock checkpoint structure."""
-        baseline_dir = tmp_path / "baseline"
+        """Create mock checkpoint directories."""
         reasoning_dir = tmp_path / "reasoning"
 
         for step in [100, 200, 300]:
-            (baseline_dir / f"checkpoint-{step}").mkdir(parents=True)
-            (reasoning_dir / f"checkpoint-{step}").mkdir(parents=True)
+            checkpoint_dir = reasoning_dir / f"checkpoint-{step}"
+            checkpoint_dir.mkdir(parents=True)
 
-        return baseline_dir, reasoning_dir
+        return reasoning_dir
 
-    @patch("viz.visualize_token_entropy.compute_entropy_trajectory")
-    @patch("viz.visualize_token_entropy.plot_entropy_comparison")
+    @patch("viz.visualize_token_entropy.load_dataset")
+    @patch("viz.visualize_token_entropy.AutoTokenizer.from_pretrained")
+    @patch("viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained")
+    @patch("viz.visualize_token_entropy.compute_token_entropies_for_checkpoint")
+    @patch("viz.visualize_token_entropy.plot_token_entropy_trajectories")
     def test_visualize_token_entropy_full_pipeline(
-        self, mock_plot, mock_trajectory, mock_checkpoint_structure, tmp_path
+        self,
+        mock_plot,
+        mock_compute,
+        mock_model_load,
+        mock_tokenizer_load,
+        mock_dataset_load,
+        mock_checkpoint_structure,
     ):
-        """Test full visualization pipeline."""
-        baseline_dir, reasoning_dir = mock_checkpoint_structure
-        output_dir = tmp_path / "output"
+        """Test the full visualization pipeline."""
+        from viz.visualize_token_entropy import visualize_token_entropy
 
-        # Mock trajectory computation
-        mock_trajectory.side_effect = [
-            ([100, 200, 300], [2.0, 2.5, 3.0]),  # Baseline embedding
-            ([100, 200, 300], [2.1, 2.4, 2.8]),  # Standard embedding
-            ([100, 200, 300], [3.0, 3.5, 4.0]),  # Reasoning embedding
-            ([100, 200, 300], [1.8, 2.3, 2.9]),  # Baseline unembedding
-            ([100, 200, 300], [1.9, 2.2, 2.7]),  # Standard unembedding
-            ([100, 200, 300], [2.9, 3.4, 3.9]),  # Reasoning unembedding
-        ]
+        # Setup mocks
+        mock_dataset = MagicMock()
+        mock_dataset_load.return_value = mock_dataset
 
-        results = visualize_token_entropy(
-            baseline_dir=baseline_dir,
-            reasoning_dir=reasoning_dir,
-            token_id=42,
-            reasoning_token_id=10,
-            token_str="test_token",
-            output_dir=output_dir,
-            plot_both_layers=True,
-        )
+        mock_tokenizer = MagicMock()
+        mock_tokenizer_load.return_value = mock_tokenizer
 
-        # Verify results structure
-        assert "embedding" in results
-        assert "unembedding" in results
+        # Mock compute function to return sample data
+        mock_compute.return_value = {
+            10: [2.0, 2.1, 1.9],
+            20: [3.0, 3.1, 2.9],
+        }
 
-        assert "baseline" in results["embedding"]
-        assert "standard" in results["embedding"]
-        assert "reasoning" in results["embedding"]
-
-        # Verify trajectory calls
-        assert mock_trajectory.call_count == 6  # 3 for embedding, 3 for unembedding
-
-        # Verify plot calls
-        assert mock_plot.call_count == 2  # One for embedding, one for unembedding
-
-    @patch("viz.visualize_token_entropy.compute_entropy_trajectory")
-    @patch("viz.visualize_token_entropy.plot_entropy_comparison")
-    def test_visualize_token_entropy_no_baseline(
-        self, mock_plot, mock_trajectory, mock_checkpoint_structure, tmp_path
-    ):
-        """Test visualization without baseline directory."""
-        _, reasoning_dir = mock_checkpoint_structure
-        output_dir = tmp_path / "output"
-
-        mock_trajectory.return_value = ([100, 200], [2.0, 2.5])
-
-        results = visualize_token_entropy(
-            baseline_dir=None,  # No baseline
-            reasoning_dir=reasoning_dir,
-            token_id=42,
-            output_dir=output_dir,
-            plot_both_layers=False,
-        )
-
-        # Should still work without baseline
-        assert "embedding" in results
-        assert results["embedding"]["baseline"]["steps"] == []
-        assert results["embedding"]["baseline"]["entropies"] == []
-
-    @patch("viz.visualize_token_entropy.compute_entropy_trajectory")
-    @patch("viz.visualize_token_entropy.plot_entropy_comparison")
-    def test_visualize_token_entropy_default_params(
-        self, mock_plot, mock_trajectory, mock_checkpoint_structure, tmp_path
-    ):
-        """Test visualization with default parameters."""
-        _, reasoning_dir = mock_checkpoint_structure
-
-        mock_trajectory.return_value = ([100], [2.0])
-
-        # Use defaults for reasoning_token_id, token_str, output_dir
-        with patch("viz.visualize_token_entropy.Path") as mock_path:
-            mock_path.return_value = tmp_path / "fig"
-
-            results = visualize_token_entropy(
-                baseline_dir=None,
-                reasoning_dir=reasoning_dir,
-                token_id=42,
-            )
-
-            # Should use token_id for reasoning_token_id
-            # Should generate token_str as "Token_42"
-            # Should use "fig" as output_dir
-            assert results is not None
-
-    @patch("viz.visualize_token_entropy.compute_entropy_trajectory")
-    @patch("viz.visualize_token_entropy.plot_entropy_comparison")
-    def test_visualize_token_entropy_embedding_only(
-        self, mock_plot, mock_trajectory, mock_checkpoint_structure, tmp_path
-    ):
-        """Test visualization with only embedding layer."""
-        _, reasoning_dir = mock_checkpoint_structure
-        output_dir = tmp_path / "output"
-
-        mock_trajectory.return_value = ([100, 200], [2.0, 2.5])
-
+        # Run visualization
         results = visualize_token_entropy(
             baseline_dir=None,
-            reasoning_dir=reasoning_dir,
-            token_id=42,
-            output_dir=output_dir,
-            plot_both_layers=False,
+            reasoning_dir=mock_checkpoint_structure,
+            dataset_name="gsm8k",
+            max_samples=10,
+            batch_size=2,
+            device="cpu",
         )
 
-        # Should only have embedding results
-        assert "embedding" in results
-        assert "unembedding" not in results
+        # Verify results
+        assert "reasoning" in results
+        assert len(results["reasoning"]) > 0
 
-        # Should call trajectory 2 times (standard + reasoning for embedding only)
-        assert mock_trajectory.call_count == 2
-
-        # Should call plot once
-        assert mock_plot.call_count == 1
+        # Verify mocks were called
+        assert mock_dataset_load.called
+        assert mock_tokenizer_load.called
+        assert mock_compute.called
+        assert mock_plot.called
 
 
 class TestEdgeCases:
     """Tests for edge cases and error conditions."""
 
-    def test_compute_embedding_entropy_single_element(self):
-        """Test entropy with single-element embedding."""
-        embedding = th.tensor([1.0])
-        entropy = compute_embedding_entropy(embedding)
+    def test_compute_output_entropy_single_token(self):
+        """Test entropy with single token vocabulary."""
+        logits = th.randn(2, 5, 1)
+        entropy = compute_output_entropy(logits)
 
-        # Single element should have zero entropy
-        assert np.isclose(entropy, 0.0, atol=1e-6)
+        # Single token -> zero entropy
+        assert th.allclose(entropy, th.zeros_like(entropy), atol=1e-6)
 
-    def test_compute_embedding_entropy_very_large(self):
-        """Test entropy with very large embedding."""
-        embedding = th.randn(10000)
-        entropy = compute_embedding_entropy(embedding)
+    def test_aggregate_token_statistics_empty_input(self):
+        """Test aggregation with empty input."""
+        token_entropies = {}
+        stats = aggregate_token_statistics(token_entropies)
 
-        # Should handle large embeddings
-        assert entropy >= 0.0
-        assert not np.isnan(entropy)
-        assert not np.isinf(entropy)
+        assert len(stats) == 0
 
-    def test_compute_embedding_entropy_extreme_values(self):
-        """Test entropy with extreme embedding values."""
-        # Very large values
-        embedding = th.tensor([1000.0, -1000.0, 500.0, -500.0])
-        entropy = compute_embedding_entropy(embedding)
-        assert entropy >= 0.0
-        assert not np.isnan(entropy)
+    def test_compute_output_entropy_very_large_vocab(self):
+        """Test entropy computation with very large vocabulary."""
+        logits = th.randn(1, 1, 100000)
+        entropy = compute_output_entropy(logits)
 
-        # Very small values
-        embedding = th.tensor([1e-10, 1e-10, 1e-10, 1e-10])
-        entropy = compute_embedding_entropy(embedding)
-        assert entropy >= 0.0
-        assert not np.isnan(entropy)
-
-    @patch("viz.visualize_token_entropy.compute_entropy_trajectory")
-    def test_visualize_token_entropy_no_checkpoints(self, mock_trajectory, tmp_path):
-        """Test behavior when no checkpoints are found."""
-        reasoning_dir = tmp_path / "reasoning"
-        reasoning_dir.mkdir()
-        output_dir = tmp_path / "output"
-
-        # No checkpoints found
-        mock_trajectory.return_value = ([], [])
-
-        results = visualize_token_entropy(
-            baseline_dir=None,
-            reasoning_dir=reasoning_dir,
-            token_id=42,
-            output_dir=output_dir,
-            plot_both_layers=False,
-        )
-
-        # Should handle empty results gracefully
-        assert results["embedding"]["standard"]["steps"] == []
-        assert results["embedding"]["standard"]["entropies"] == []
+        assert th.all(th.isfinite(entropy))
+        assert entropy.shape == (1, 1)
