@@ -60,7 +60,6 @@ class ReasoningTokenizer:
         self.tokenizer = tokenizer
         self.standard_vocab_size = tokenizer.vocab_size
 
-        # Convert reasoning_token_ids to tensor
         self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
         self.reasoning_vocab_size = len(reasoning_token_ids)
 
@@ -131,13 +130,14 @@ class ReasoningTokenizer:
         return standard_ids, multiplicities
 
     def convert_ids_to_tokens_and_multiplicity(
-        self, token_ids: list[int] | th.Tensor
+        self, token_ids: list[int] | th.Tensor, **kwargs
     ) -> tuple[list[str], list[int]]:
         """
         Convert token IDs to token strings and multiplicities.
 
         Args:
             token_ids: Sequence of token IDs
+            **kwargs: Additional arguments to pass to tokenizer.convert_ids_to_tokens
 
         Returns:
             Tuple of (token_strings, multiplicities)
@@ -150,7 +150,7 @@ class ReasoningTokenizer:
         standard_ids, multiplicities = self._convert_to_standard_ids_and_multiplicities(token_ids)
 
         # Convert IDs to tokens using base tokenizer
-        tokens = self.tokenizer.convert_ids_to_tokens(standard_ids.tolist())
+        tokens = self.tokenizer.convert_ids_to_tokens(standard_ids.tolist(), **kwargs)
 
         return tokens, multiplicities.tolist()
 
