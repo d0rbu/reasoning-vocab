@@ -36,6 +36,16 @@ def tiny_config():
     return config
 
 
+@pytest.fixture
+def mock_tokenizer():
+    """Create a mock tokenizer for testing."""
+    from unittest.mock import MagicMock
+
+    tokenizer = MagicMock()
+    tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence"
+    return tokenizer
+
+
 def test_model_initialization_no_reasoning(tiny_config):
     """Test that model initializes correctly without reasoning vocabulary."""
     model = Qwen3ReasoningVocabForCausalLM(tiny_config)
@@ -192,14 +202,16 @@ def test_gradient_flow(tiny_config):
     assert model.lm_head.weight.grad.abs().sum() > 0
 
 
-def test_logits_processor_standard_mode(tiny_config):
+def test_logits_processor_standard_mode(tiny_config, mock_tokenizer):
     """Test LogitsProcessor masks reasoning vocab when no think tags present."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    # Create processor with no thinking tags configured
-    processor = model.get_logits_processor()
+    # Mock tokenizer that returns text without think tags
+    mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence without tags"
+
+    processor = model.get_logits_processor(mock_tokenizer)
 
     batch_size = 2
     seq_len = 5
@@ -217,25 +229,33 @@ def test_logits_processor_standard_mode(tiny_config):
     assert th.all(processed_logits[:, original_vocab_size:] == float("-inf"))
 
 
-def test_logits_processor_reasoning_mode(tiny_config):
+def test_logits_processor_reasoning_mode(tiny_config, mock_tokenizer):
     """Test LogitsProcessor allows reasoning vocab when think tag is open."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
-    # Use specific token IDs for think tags
-    think_token_id = 100
-    end_think_token_id = 101
+    # Mock tokenizer that returns different text based on a marker token (999)
+    def mock_decode(ids, skip_special_tokens=False):
+        # Convert ids to tensor if needed
+        if not isinstance(ids, th.Tensor):
+            ids = th.tensor(ids)
+        # Check if sequence contains marker token 999
+        if 999 in ids:
+            return "text with <think> tag"
+        return "text without tags"
 
-    processor = model.get_logits_processor(think_token_id, end_think_token_id)
+    mock_tokenizer.decode = mock_decode
+
+    processor = model.get_logits_processor(mock_tokenizer, "<think>", "</think>")
 
     batch_size = 2
     seq_len = 5
     extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
 
-    # Create input with think tag but no end tag
-    input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
-    input_ids[0, 2] = think_token_id  # Add think tag to first sequence
+    # Create input - first sequence will have marker token to get <think> tag
+    input_ids = th.randint(1, 998, (batch_size, seq_len))
+    input_ids[0, 2] = 999  # Mark first sequence to return text with <think>
 
     logits = th.randn(batch_size, extended_vocab_size)
 
@@ -268,7 +288,7 @@ def test_generate_compatibility(tiny_config):
     assert output.shape[1] > seq_len
 
 
-def test_generate_with_logits_processor(tiny_config):
+def test_generate_with_logits_processor(tiny_config, mock_tokenizer):
     """Test generation with LogitsProcessor to control reasoning vocab."""
     reasoning_token_ids = [10, 20, 30]
     original_vocab_size = tiny_config.vocab_size
@@ -279,8 +299,11 @@ def test_generate_with_logits_processor(tiny_config):
     seq_len = 5
     input_ids = th.randint(0, original_vocab_size, (batch_size, seq_len))
 
+    # Mock tokenizer that returns text without think tags
+    mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "text without tags"
+
     # Get logits processor (no thinking tags, so reasoning vocab will be masked)
-    processor = model.get_logits_processor()
+    processor = model.get_logits_processor(mock_tokenizer)
 
     # Test generation with processor
     with th.no_grad():
