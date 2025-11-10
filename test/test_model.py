@@ -11,6 +11,7 @@ This module tests:
 
 import pytest
 import torch as th
+from transformers import AutoTokenizer
 
 from core.modeling_qwen3_reasoning import (
     Qwen3ReasoningVocabForCausalLM,
@@ -41,8 +42,6 @@ def tiny_config():
 @pytest.fixture
 def gpt2_tokenizer():
     """Create a GPT-2 tokenizer for testing."""
-    from transformers import AutoTokenizer
-
     return AutoTokenizer.from_pretrained("gpt2")
 
 
