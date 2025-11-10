@@ -14,6 +14,7 @@ import torch as th
 
 from core.modeling_qwen3_reasoning import (
     Qwen3ReasoningVocabForCausalLM,
+    ReasoningVocabLogitsProcessor,
 )
 from core.reasoning_vocab_utils import get_reasoning_token_ids
 
@@ -42,6 +43,7 @@ def mock_tokenizer():
     from unittest.mock import MagicMock
 
     tokenizer = MagicMock()
+    tokenizer.vocab_size = 1000
     tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence"
     return tokenizer
 
@@ -211,7 +213,7 @@ def test_logits_processor_standard_mode(tiny_config, mock_tokenizer):
     # Mock tokenizer that returns text without think tags
     mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "test sequence without tags"
 
-    processor = model.get_logits_processor(mock_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, mock_tokenizer)
 
     batch_size = 2
     seq_len = 5
@@ -247,7 +249,9 @@ def test_logits_processor_reasoning_mode(tiny_config, mock_tokenizer):
 
     mock_tokenizer.decode = mock_decode
 
-    processor = model.get_logits_processor(mock_tokenizer, "<think>", "</think>")
+    processor = ReasoningVocabLogitsProcessor(
+        model.standard_vocab_size, mock_tokenizer, "<think>", "</think>"
+    )
 
     batch_size = 2
     seq_len = 5
@@ -303,7 +307,7 @@ def test_generate_with_logits_processor(tiny_config, mock_tokenizer):
     mock_tokenizer.decode = lambda ids, skip_special_tokens=False: "text without tags"
 
     # Get logits processor (no thinking tags, so reasoning vocab will be masked)
-    processor = model.get_logits_processor(mock_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, mock_tokenizer)
 
     # Test generation with processor
     with th.no_grad():
