@@ -32,7 +32,7 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
     def __init__(
         self,
         standard_vocab_size: int,
-        tokenizer: PreTrainedTokenizer | None = None,
+        tokenizer: PreTrainedTokenizer,
         think_tag: str = "<think>",
         end_think_tag: str = "</think>",
     ):
@@ -52,15 +52,8 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
         Returns:
             Modified logits with reasoning tokens masked when appropriate
         """
-        # If no tokenizer is configured, disable reasoning vocab
-        if self.tokenizer is None:
-            scores[:, self.standard_vocab_size :] = float("-inf")
-            return scores
-
         # Check each sequence in the batch
-        for batch_idx in range(input_ids.shape[0]):
-            sequence = input_ids[batch_idx]
-
+        for batch_idx, sequence in enumerate(input_ids):
             # Decode sequence to text
             text = self.tokenizer.decode(sequence, skip_special_tokens=False)
 
@@ -68,9 +61,8 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
             has_think = self.think_tag in text
             has_end_think = self.end_think_tag in text
 
-            # If we have an opening tag without a closing tag, allow reasoning vocab
-            # Otherwise, mask reasoning vocab
-            if not (has_think and not has_end_think):
+            # If we don't have an opening tag, or we have a closing tag, mask reasoning vocab
+            if not has_think or has_end_think:
                 scores[batch_idx, self.standard_vocab_size :] = float("-inf")
 
         return scores
@@ -164,24 +156,3 @@ class Qwen3ReasoningVocabForCausalLM(Qwen3ForCausalLM):
     def num_reasoning_tokens(self) -> int:
         """Get the number of reasoning tokens."""
         return self.reasoning_vocab_size
-
-    def get_logits_processor(
-        self,
-        tokenizer: PreTrainedTokenizer | None = None,
-        think_tag: str = "<think>",
-        end_think_tag: str = "</think>",
-    ) -> ReasoningVocabLogitsProcessor:
-        """
-        Get a LogitsProcessor for dynamic reasoning vocabulary control.
-
-        Args:
-            tokenizer: Tokenizer for decoding sequences to check for tags
-            think_tag: String pattern for opening thinking tag (default: "<think>")
-            end_think_tag: String pattern for closing thinking tag (default: "</think>")
-
-        Returns:
-            LogitsProcessor instance
-        """
-        return ReasoningVocabLogitsProcessor(
-            self.standard_vocab_size, tokenizer, think_tag, end_think_tag
-        )
