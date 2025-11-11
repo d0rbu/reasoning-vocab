@@ -11,7 +11,7 @@ from collections.abc import Sequence
 
 import torch as th
 from transformers import Qwen3ForCausalLM
-from transformers.generation import LogitsProcessor
+from transformers.generation.logits_process import LogitsProcessor
 
 from core.tokenizer_utils import ReasoningTokenizer
 
@@ -105,11 +105,12 @@ class Qwen3ReasoningVocabForCausalLM(Qwen3ForCausalLM):
         super().__init__(config)
 
         # Store original vocab size as an attribute (do this after super().__init__)
-        self.standard_vocab_size = original_vocab_size
+        self.standard_vocab_size: int = original_vocab_size
 
         # Convert reasoning_token_ids to tensor and store
         self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
-        self.reasoning_vocab_size = len(reasoning_token_ids)
+        reasoning_vocab_size: int = len(reasoning_token_ids)
+        self.reasoning_vocab_size: int = reasoning_vocab_size
 
         # Extend embeddings if reasoning tokens are provided
         if self.reasoning_vocab_size > 0:

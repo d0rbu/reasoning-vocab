@@ -12,6 +12,7 @@ This module tests:
 import pytest
 import torch as th
 from transformers import AutoTokenizer
+from transformers.generation.logits_process import LogitsProcessorList
 
 from core.modeling_qwen3_reasoning import (
     Qwen3ReasoningVocabForCausalLM,
@@ -217,10 +218,15 @@ def test_logits_processor_standard_mode(tiny_config, gpt2_tokenizer):
     extended_vocab_size = original_vocab_size + len(reasoning_token_ids)
 
     # Create input without think tags - just use GPT-2 vocab tokens
-    input_ids = th.randint(
+    input_ids_tensor = th.randint(
         0, min(gpt2_tokenizer.vocab_size, original_vocab_size), (batch_size, seq_len)
     )
-    logits = th.randn(batch_size, extended_vocab_size)
+    assert isinstance(input_ids_tensor, th.LongTensor), "randint should create LongTensor"
+    input_ids: th.LongTensor = input_ids_tensor
+
+    logits_tensor = th.randn(batch_size, extended_vocab_size)
+    assert isinstance(logits_tensor, th.FloatTensor), "randn should create FloatTensor"
+    logits: th.FloatTensor = logits_tensor
 
     processed_logits = processor(input_ids, logits)
 
@@ -264,8 +270,13 @@ def test_logits_processor_reasoning_mode(tiny_config, gpt2_tokenizer):
         normal_ids, (0, max_len - len(normal_ids)), value=gpt2_tokenizer.eos_token_id
     )
 
-    input_ids = th.stack([think_ids, normal_ids])
-    logits = th.randn(batch_size, extended_vocab_size)
+    input_ids_tensor = th.stack([think_ids, normal_ids])
+    assert isinstance(input_ids_tensor, th.LongTensor), "stacked tensor should be LongTensor"
+    input_ids: th.LongTensor = input_ids_tensor
+
+    logits_tensor = th.randn(batch_size, extended_vocab_size)
+    assert isinstance(logits_tensor, th.FloatTensor), "randn should create FloatTensor"
+    logits: th.FloatTensor = logits_tensor
 
     processed_logits = processor(input_ids, logits)
 
@@ -305,9 +316,11 @@ def test_generate_with_logits_processor(tiny_config, gpt2_tokenizer):
 
     batch_size = 1
     seq_len = 5
-    input_ids = th.randint(
+    input_ids_tensor = th.randint(
         0, min(gpt2_tokenizer.vocab_size, original_vocab_size), (batch_size, seq_len)
     )
+    assert isinstance(input_ids_tensor, th.LongTensor), "randint should create LongTensor"
+    input_ids: th.LongTensor = input_ids_tensor
 
     # Create reasoning tokenizer wrapper
     reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
@@ -315,13 +328,16 @@ def test_generate_with_logits_processor(tiny_config, gpt2_tokenizer):
     # Get logits processor (no thinking tags, so reasoning vocab will be masked)
     processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, reasoning_tokenizer)
 
+    # Test generation with processor - use LogitsProcessorList
+    processor_list = LogitsProcessorList([processor])
+
     # Test generation with processor
     with th.no_grad():
         output = model.generate(
             input_ids,
             max_new_tokens=5,
             do_sample=False,
-            logits_processor=[processor],
+            logits_processor=processor_list,
         )
 
     assert output.shape[0] == batch_size
