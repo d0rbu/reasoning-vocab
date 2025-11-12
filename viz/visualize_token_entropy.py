@@ -25,6 +25,8 @@ from torch import nn
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase
 
+from core.device_utils import clear_device_cache
+
 
 @dataclass
 class TokenEntropyTrajectory:
@@ -32,30 +34,6 @@ class TokenEntropyTrajectory:
 
     steps: list[int] = field(default_factory=list)
     entropies: list[float] = field(default_factory=list)
-
-
-def get_available_device() -> str:
-    """
-    Get the best available device for computation.
-
-    Checks in order: CUDA, XPU, CPU
-
-    Returns:
-        Device string ("cuda", "xpu", or "cpu")
-    """
-    if th.cuda.is_available():
-        return "cuda"
-    if hasattr(th, "xpu") and th.xpu.is_available():  # type: ignore[attr-defined]
-        return "xpu"
-    return "cpu"
-
-
-def clear_device_cache() -> None:
-    """Clear cache for the available accelerator device."""
-    if th.cuda.is_available():
-        th.cuda.empty_cache()
-    elif hasattr(th, "xpu") and th.xpu.is_available():  # type: ignore[attr-defined]
-        th.xpu.empty_cache()  # type: ignore[attr-defined]
 
 
 def compute_output_entropy(logits: th.Tensor, vocab_size: int, dim: int = -1) -> th.Tensor:
@@ -110,12 +88,9 @@ def compute_token_entropies_from_model(
     Returns:
         1D tensor of shape [vocab_size] containing average entropy per token
     """
-    # Get model's device
-    device = next(model.parameters()).device
-
-    # Initialize accumulators for scatter operations
-    entropy_sum = th.zeros(vocab_size, dtype=th.float32, device=device)
-    token_count = th.zeros(vocab_size, dtype=th.int64, device=device)
+    # Initialize accumulators for scatter operations (on CPU)
+    entropy_sum = th.zeros(vocab_size, dtype=th.float32)
+    token_count = th.zeros(vocab_size, dtype=th.int64)
 
     # Process samples
     samples_to_process = dataset[:max_samples] if max_samples else dataset
@@ -151,9 +126,8 @@ def compute_token_entropies_from_model(
             input_ids = inputs["input_ids"]  # [batch_size, seq_len]
 
             # Flatten everything and scatter (we'll ignore padding token later)
-            # Exclude last position for all sequences (no next token to predict)
-            flat_tokens = input_ids[:, :-1].flatten()  # [batch_size * (seq_len - 1)]
-            flat_entropies = entropies[:, :-1].flatten()  # [batch_size * (seq_len - 1)]
+            flat_tokens = input_ids.flatten().to(entropy_sum.device)  # [batch_size * seq_len]
+            flat_entropies = entropies.flatten().to(entropy_sum.device)  # [batch_size * seq_len]
 
             # Scatter add to accumulators
             entropy_sum.scatter_add_(0, flat_tokens, flat_entropies)
@@ -242,15 +216,16 @@ def compute_token_entropy_trajectory(
             )
 
             # Index all tracked tokens at once
-            tracked_entropies = avg_entropies[token_ids_tensor].cpu()
+            tracked_entropies = avg_entropies[token_ids_tensor]
 
             # Record entropy for each tracked token
-            for i, token_id in enumerate(token_ids):
-                entropy_value = tracked_entropies[i].item()
+            for token_id, entropy_value in zip(token_ids, tracked_entropies, strict=True):
                 results[token_id].steps.append(step)
-                results[token_id].entropies.append(entropy_value)
+                results[token_id].entropies.append(entropy_value.item())
 
-                logger.info(f"Token {token_id} at step {step}: avg entropy = {entropy_value:.4f}")
+                logger.info(
+                    f"Token {token_id} at step {step}: avg entropy = {entropy_value.item():.4f}"
+                )
 
             # Clean up model to free memory
             del model
