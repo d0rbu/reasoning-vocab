@@ -12,7 +12,7 @@ tracking how this evolves during training. It:
 
 import argparse
 from dataclasses import dataclass, field
-from itertools import batched
+from itertools import batched  # type: ignore[attr-defined]  # batched added in Python 3.12
 from pathlib import Path
 from typing import Any, cast
 
