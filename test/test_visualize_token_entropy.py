@@ -107,7 +107,7 @@ class TestTrajectoryComputation:
         # Mock model loading
         mock_model = MagicMock()
         mock_from_pretrained.return_value = mock_model
-        
+
         # Mock compute_token_entropies_from_model to return entropy tensor
         vocab_size = 1000
         mock_compute_entropies.side_effect = [
@@ -149,7 +149,7 @@ class TestTrajectoryComputation:
         # Mock model loading
         mock_model = MagicMock()
         mock_from_pretrained.return_value = mock_model
-        
+
         # Token 42 present in all, token 100 present in all (can't actually be "missing" in tensor)
         vocab_size = 1000
         mock_compute_entropies.side_effect = [
@@ -181,7 +181,7 @@ class TestTrajectoryComputation:
         # Mock model loading
         mock_model = MagicMock()
         mock_from_pretrained.return_value = mock_model
-        
+
         # Make middle checkpoint fail
         vocab_size = 1000
         mock_compute_entropies.side_effect = [
@@ -213,14 +213,17 @@ class TestTrajectoryComputation:
             cp.mkdir()
 
         vocab_size = 1000
-        with patch(
-            "viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained"
-        ) as mock_from_pretrained, patch(
-            "viz.visualize_token_entropy.compute_token_entropies_from_model"
-        ) as mock_compute_entropies:
+        with (
+            patch(
+                "viz.visualize_token_entropy.AutoModelForCausalLM.from_pretrained"
+            ) as mock_from_pretrained,
+            patch(
+                "viz.visualize_token_entropy.compute_token_entropies_from_model"
+            ) as mock_compute_entropies,
+        ):
             mock_model = MagicMock()
             mock_from_pretrained.return_value = mock_model
-            
+
             mock_compute_entropies.return_value = th.tensor(
                 [2.0 if i == 42 else 0.0 for i in range(vocab_size)]
             )
@@ -247,21 +250,13 @@ class TestPlotting:
     def test_plot_basic(self, tmp_path, mock_tokenizer):
         """Test basic plot generation."""
         baseline_data = {
-            42: TokenEntropyTrajectory(
-                steps=[100, 200, 300], entropies=[2.0, 2.5, 3.0]
-            ),
-            100: TokenEntropyTrajectory(
-                steps=[100, 200, 300], entropies=[3.0, 3.2, 3.5]
-            ),
+            42: TokenEntropyTrajectory(steps=[100, 200, 300], entropies=[2.0, 2.5, 3.0]),
+            100: TokenEntropyTrajectory(steps=[100, 200, 300], entropies=[3.0, 3.2, 3.5]),
         }
 
         reasoning_data = {
-            42: TokenEntropyTrajectory(
-                steps=[100, 200, 300], entropies=[2.1, 2.4, 2.9]
-            ),
-            100: TokenEntropyTrajectory(
-                steps=[100, 200, 300], entropies=[3.1, 3.3, 3.6]
-            ),
+            42: TokenEntropyTrajectory(steps=[100, 200, 300], entropies=[2.1, 2.4, 2.9]),
+            100: TokenEntropyTrajectory(steps=[100, 200, 300], entropies=[3.1, 3.3, 3.6]),
         }
 
         output_path = tmp_path / "test_plot.png"
@@ -275,9 +270,7 @@ class TestPlotting:
         baseline_data = {}
 
         reasoning_data = {
-            42: TokenEntropyTrajectory(
-                steps=[100, 200], entropies=[2.0, 2.5]
-            ),
+            42: TokenEntropyTrajectory(steps=[100, 200], entropies=[2.0, 2.5]),
         }
 
         output_path = tmp_path / "test_plot_no_baseline.png"
@@ -290,9 +283,7 @@ class TestPlotting:
         """Test that plot creates output directory if needed."""
         output_path = tmp_path / "nested" / "dir" / "plot.png"
 
-        data = {
-            42: TokenEntropyTrajectory(steps=[100], entropies=[2.0])
-        }
+        data = {42: TokenEntropyTrajectory(steps=[100], entropies=[2.0])}
 
         plot_token_entropy_comparison(data, data, mock_tokenizer, output_path)
 
@@ -393,9 +384,7 @@ class TestVisualizationPipeline:
 
         mock_load_dataset.return_value = mock_dataset
         mock_tokenizer.return_value = MagicMock()
-        mock_compute.return_value = {
-            42: TokenEntropyTrajectory(steps=[100], entropies=[2.0])
-        }
+        mock_compute.return_value = {42: TokenEntropyTrajectory(steps=[100], entropies=[2.0])}
 
         result = visualize_token_entropy(
             baseline_dir=None,
