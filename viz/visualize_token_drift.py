@@ -11,8 +11,9 @@ showing trajectories of how embeddings drift over training checkpoints.
 """
 
 import argparse
+from enum import Enum
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import cast
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -24,11 +25,17 @@ from torch import nn
 from transformers import AutoModelForCausalLM
 
 
+class EmbeddingType(str, Enum):
+    """Type of embeddings to load from model."""
+
+    INPUT = "input"
+    OUTPUT = "output"
+
+
 def load_checkpoint_embeddings(
     checkpoint_path: Path,
     token_ids: list[int],
-    embedding_type: Literal["input", "output"] = "input",
-    use_reasoning_vocab: bool = False,
+    embedding_type: EmbeddingType = EmbeddingType.INPUT,
 ) -> th.Tensor:
     """
     Load embeddings for specific tokens from a model checkpoint.
@@ -37,19 +44,17 @@ def load_checkpoint_embeddings(
         checkpoint_path: Path to model checkpoint directory
         token_ids: List of token IDs to extract embeddings for
         embedding_type: Whether to load input embeddings or output unembeddings
-        use_reasoning_vocab: If True, load from reasoning vocab layers (if they exist)
 
     Returns:
         Tensor of shape (num_tokens, hidden_size) containing embeddings
 
     Raises:
         FileNotFoundError: If checkpoint doesn't exist
-        ValueError: If reasoning vocab requested but not found in model
     """
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
-    logger.debug(f"Loading {embedding_type} embeddings from {checkpoint_path}")
+    logger.debug(f"Loading {embedding_type.value} embeddings from {checkpoint_path}")
 
     # Load model checkpoint
     model = AutoModelForCausalLM.from_pretrained(
@@ -58,27 +63,13 @@ def load_checkpoint_embeddings(
         device_map="cpu",
     )
 
-    # Get embeddings based on type and vocab
-    if use_reasoning_vocab:
-        # Check if reasoning vocab exists
-        if not hasattr(model, "reasoning_embed"):
-            raise ValueError(f"Reasoning vocabulary not found in checkpoint: {checkpoint_path}")
-
-        if embedding_type == "input":
-            embed_layer = cast(nn.Embedding, model.reasoning_embed)  # type: ignore[attr-defined]
-        else:
-            embed_layer = cast(nn.Linear, model.reasoning_unembed)  # type: ignore[attr-defined]
-
-        # For reasoning vocab, token_ids are indices into the reasoning vocabulary
-        embeddings = cast(th.Tensor, embed_layer.weight.data[token_ids])
+    # Get embeddings based on type
+    if embedding_type == EmbeddingType.INPUT:
+        embed_layer = cast(nn.Embedding, model.get_input_embeddings())
     else:
-        # Standard vocabulary
-        if embedding_type == "input":
-            embed_layer = cast(nn.Embedding, model.get_input_embeddings())
-        else:
-            embed_layer = cast(nn.Linear, model.get_output_embeddings())
+        embed_layer = cast(nn.Linear, model.get_output_embeddings())
 
-        embeddings = cast(th.Tensor, embed_layer.weight.data[token_ids])
+    embeddings = cast(th.Tensor, embed_layer.weight.data[token_ids])
 
     logger.debug(f"Loaded embeddings with shape: {embeddings.shape}")
     return embeddings
@@ -87,8 +78,7 @@ def load_checkpoint_embeddings(
 def collect_embedding_trajectories(
     checkpoint_dirs: list[Path],
     token_ids: list[int],
-    embedding_type: Literal["input", "output"] = "input",
-    use_reasoning_vocab: bool = False,
+    embedding_type: EmbeddingType = EmbeddingType.INPUT,
 ) -> np.ndarray:
     """
     Collect embedding trajectories across multiple checkpoints.
@@ -97,20 +87,16 @@ def collect_embedding_trajectories(
         checkpoint_dirs: List of checkpoint directories in chronological order
         token_ids: List of token IDs to track
         embedding_type: Whether to load input embeddings or output unembeddings
-        use_reasoning_vocab: If True, load from reasoning vocab layers
 
     Returns:
         Array of shape (num_checkpoints, num_tokens, hidden_size)
     """
-    trajectories = []
-
-    for ckpt_dir in checkpoint_dirs:
-        embeddings = load_checkpoint_embeddings(
-            ckpt_dir, token_ids, embedding_type, use_reasoning_vocab
-        )
-        trajectories.append(embeddings.numpy())
-
-    return np.array(trajectories)
+    return np.array(
+        [
+            load_checkpoint_embeddings(ckpt_dir, token_ids, embedding_type).numpy()
+            for ckpt_dir in checkpoint_dirs
+        ]
+    )
 
 
 def compute_pca_trajectories(
@@ -351,7 +337,7 @@ def visualize_token_drift(
     reasoning_checkpoints: list[Path],
     token_ids: list[int],
     token_labels: list[str] | None = None,
-    embedding_type: Literal["input", "output"] = "input",
+    embedding_type: EmbeddingType = EmbeddingType.INPUT,
     n_components: int = 2,
     output_dir: Path = Path("fig"),
     experiment_name: str = "token_drift",
@@ -384,18 +370,14 @@ def visualize_token_drift(
 
     # Collect trajectories
     logger.info("Collecting baseline embeddings...")
-    baseline_traj = collect_embedding_trajectories(
-        [baseline_checkpoint], token_ids, embedding_type, use_reasoning_vocab=False
-    )
+    baseline_traj = collect_embedding_trajectories([baseline_checkpoint], token_ids, embedding_type)
 
     logger.info("Collecting standard vocab trajectories...")
-    standard_traj = collect_embedding_trajectories(
-        reasoning_checkpoints, token_ids, embedding_type, use_reasoning_vocab=False
-    )
+    standard_traj = collect_embedding_trajectories(reasoning_checkpoints, token_ids, embedding_type)
 
     logger.info("Collecting reasoning vocab trajectories...")
     reasoning_traj = collect_embedding_trajectories(
-        reasoning_checkpoints, token_ids, embedding_type, use_reasoning_vocab=True
+        reasoning_checkpoints, token_ids, embedding_type
     )
 
     # Combine all trajectories for unified PCA
@@ -430,8 +412,8 @@ def visualize_token_drift(
         fig = plot_2d_drift(
             trajectories_dict,
             token_labels=token_labels,
-            title=f"Token Embedding Drift - {embedding_type.capitalize()}",
-            save_path=output_dir / f"{experiment_name}_{embedding_type}_2d.png",
+            title=f"Token Embedding Drift - {embedding_type.value.capitalize()}",
+            save_path=output_dir / f"{experiment_name}_{embedding_type.value}_2d.png",
         )
         figures["2d"] = fig
     elif n_components == 3:
@@ -439,8 +421,8 @@ def visualize_token_drift(
         fig = plot_3d_drift(
             trajectories_dict,
             token_labels=token_labels,
-            title=f"Token Embedding Drift - {embedding_type.capitalize()} (3D)",
-            save_path=output_dir / f"{experiment_name}_{embedding_type}_3d.png",
+            title=f"Token Embedding Drift - {embedding_type.value.capitalize()} (3D)",
+            save_path=output_dir / f"{experiment_name}_{embedding_type.value}_3d.png",
         )
         figures["3d"] = fig
     else:
@@ -512,13 +494,16 @@ def main():
     if args.token_labels and len(args.token_labels) != len(args.token_ids):
         parser.error("Number of token labels must match number of token IDs")
 
+    # Convert string to enum
+    embedding_type = EmbeddingType(args.embedding_type)
+
     # Run visualization
     visualize_token_drift(
         baseline_checkpoint=args.baseline,
         reasoning_checkpoints=args.checkpoints,
         token_ids=args.token_ids,
         token_labels=args.token_labels,
-        embedding_type=args.embedding_type,
+        embedding_type=embedding_type,
         n_components=args.n_components,
         output_dir=args.output_dir,
         experiment_name=args.experiment_name,

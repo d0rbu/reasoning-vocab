@@ -16,6 +16,7 @@ import torch as th
 from matplotlib.figure import Figure
 
 from viz.visualize_token_drift import (
+    EmbeddingType,
     collect_embedding_trajectories,
     compute_pca_trajectories,
     load_checkpoint_embeddings,
@@ -118,7 +119,7 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type="input", use_reasoning_vocab=False
+                checkpoint_path, token_ids, embedding_type=EmbeddingType.INPUT
             )
 
             assert embeddings.shape == (3, 128)
@@ -135,7 +136,7 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type="output", use_reasoning_vocab=False
+                checkpoint_path, token_ids, embedding_type=EmbeddingType.OUTPUT
             )
 
             assert embeddings.shape == (3, 128)
@@ -152,7 +153,7 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type="input", use_reasoning_vocab=True
+                checkpoint_path, token_ids, embedding_type=EmbeddingType.INPUT
             )
 
             assert embeddings.shape == (3, 128)
@@ -163,32 +164,7 @@ class TestLoadCheckpointEmbeddings:
         checkpoint_path = tmp_path / "nonexistent"
 
         with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
-            load_checkpoint_embeddings(
-                checkpoint_path, [0, 1], embedding_type="input", use_reasoning_vocab=False
-            )
-
-    def test_reasoning_vocab_not_found(self, tmp_path):
-        """Test error when requesting reasoning vocab from model without it."""
-        checkpoint_path = tmp_path / "checkpoint"
-        checkpoint_path.mkdir()
-
-        # Create a model without reasoning_embed attribute
-        model = Mock(spec=["get_input_embeddings", "get_output_embeddings"])
-
-        # Set up standard embeddings
-        input_embed = Mock()
-        input_embed.weight = Mock()
-        input_embed.weight.data = th.randn(100, 128)
-        model.get_input_embeddings = Mock(return_value=input_embed)
-
-        with patch(
-            "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
-            return_value=model,
-        ):
-            with pytest.raises(ValueError, match="Reasoning vocabulary not found"):
-                load_checkpoint_embeddings(
-                    checkpoint_path, [0, 1], embedding_type="input", use_reasoning_vocab=True
-                )
+            load_checkpoint_embeddings(checkpoint_path, [0, 1], embedding_type=EmbeddingType.INPUT)
 
 
 class TestCollectEmbeddingTrajectories:
@@ -205,7 +181,7 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                [checkpoint_path], token_ids, embedding_type="input", use_reasoning_vocab=False
+                [checkpoint_path], token_ids, embedding_type=EmbeddingType.INPUT
             )
 
             assert trajectories.shape == (1, 3, 128)
@@ -226,7 +202,7 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                checkpoints, token_ids, embedding_type="input", use_reasoning_vocab=False
+                checkpoints, token_ids, embedding_type=EmbeddingType.INPUT
             )
 
             assert trajectories.shape == (3, 3, 128)
@@ -243,7 +219,7 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                [checkpoint_path], token_ids, embedding_type="input", use_reasoning_vocab=True
+                [checkpoint_path], token_ids, embedding_type=EmbeddingType.INPUT
             )
 
             assert trajectories.shape == (1, 3, 128)
@@ -410,7 +386,7 @@ class TestVisualizeTokenDrift:
                 reasoning_checkpoints=checkpoints,
                 token_ids=[0, 1, 2],
                 token_labels=["a", "b", "c"],
-                embedding_type="input",
+                embedding_type=EmbeddingType.INPUT,
                 n_components=2,
                 output_dir=output_dir,
                 experiment_name="test",
@@ -444,7 +420,7 @@ class TestVisualizeTokenDrift:
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
                 token_ids=[0, 1, 2],
-                embedding_type="output",
+                embedding_type=EmbeddingType.OUTPUT,
                 n_components=3,
                 output_dir=output_dir,
                 experiment_name="test_3d",
@@ -495,7 +471,7 @@ class TestVisualizeTokenDrift:
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
                 token_ids=[0, 1],
-                embedding_type="output",
+                embedding_type=EmbeddingType.OUTPUT,
                 n_components=2,
                 output_dir=output_dir,
             )
@@ -534,7 +510,7 @@ class TestIntegration:
                 reasoning_checkpoints=checkpoints,
                 token_ids=token_ids,
                 token_labels=token_labels,
-                embedding_type="input",
+                embedding_type=EmbeddingType.INPUT,
                 n_components=2,
                 output_dir=output_dir,
                 experiment_name="multi_token",
