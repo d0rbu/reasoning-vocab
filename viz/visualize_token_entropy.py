@@ -11,122 +11,170 @@ tracking how this evolves during training. It:
 """
 
 import argparse
-from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch as th
 from datasets import load_dataset
 from loguru import logger
+from torch import nn
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase
 
 
-def compute_output_entropy(logits: th.Tensor) -> float:
+@dataclass
+class TokenEntropyTrajectory:
+    """Stores entropy trajectory data for a token across training steps."""
+
+    steps: list[int]
+    entropies: list[float]
+
+
+def compute_output_entropy(logits: th.Tensor, vocab_size: int, dim: int = -1) -> th.Tensor:
     """
-    Compute entropy of output distribution from logits.
+    Compute entropy of output distributions from logits (vectorized).
 
     Args:
-        logits: 1D tensor of logits for vocabulary
+        logits: 2D tensor of shape [seq_len, vocab_size] containing logits
+        vocab_size: Size of vocabulary
+        dim: Dimension along which to compute softmax (default: -1)
 
     Returns:
-        Entropy value in nats (natural logarithm base)
+        1D tensor of shape [seq_len] containing entropy values in nats
     """
     # Convert logits to probability distribution via softmax
-    probs = th.softmax(logits, dim=-1)
+    probs = th.softmax(logits, dim=dim)
 
     # Compute Shannon entropy: -sum(p * log(p))
     # Add small epsilon to avoid log(0)
     epsilon = 1e-10
-    entropy = -th.sum(probs * th.log(probs + epsilon))
+    entropy = -th.sum(probs * th.log(probs + epsilon), dim=dim)
 
-    return entropy.item()
+    return entropy
 
 
-def process_checkpoint_for_token_entropies(
-    checkpoint_path: Path,
-    tokenizer: AutoTokenizer,
+def compute_token_entropies_from_model(
+    model: nn.Module,
+    tokenizer: PreTrainedTokenizerBase,
     dataset: list[str],
+    vocab_size: int,
     max_samples: int | None = None,
     max_length: int = 512,
-) -> dict[int, list[float]]:
+    batch_size: int = 8,
+    device: str | None = None,
+) -> th.Tensor:
     """
-    Process a checkpoint to compute token entropies on validation data.
+    Compute average token entropies on validation data (vectorized, batched).
 
     For each sample in the dataset:
-    - Tokenize and run through model
-    - For each token position, compute entropy of output distribution
-    - Store entropy grouped by the input token at that position
+    - Tokenize and run through model in batches
+    - Compute entropy of output distributions for all positions at once
+    - Use scatter operations to aggregate entropies by token ID
 
     Args:
-        checkpoint_path: Path to model checkpoint
+        model: The model to evaluate (must be in eval mode)
         tokenizer: Tokenizer for the model
         dataset: List of text samples to process
+        vocab_size: Size of the vocabulary
         max_samples: Maximum number of samples to process (None = all)
         max_length: Maximum sequence length
+        batch_size: Batch size for processing
+        device: Device to use (None = auto-detect)
 
     Returns:
-        Dictionary mapping token_id -> list of entropy values observed for that token
+        1D tensor of shape [vocab_size] containing average entropy per token
     """
-    logger.info(f"Loading checkpoint from {checkpoint_path}")
+    if device is None:
+        device = "cuda" if th.cuda.is_available() else "cpu"
 
-    # Load model
-    model = AutoModelForCausalLM.from_pretrained(
-        checkpoint_path,
-        torch_dtype=th.float32,
-        trust_remote_code=True,
-        device_map="cpu",  # Use CPU for consistency
-    )
+    model = model.to(device)
     model.eval()
 
-    # Track entropies by token
-    token_entropies: dict[int, list[float]] = defaultdict(list)
+    # Initialize accumulators for scatter operations
+    entropy_sum = th.zeros(vocab_size, dtype=th.float32, device=device)
+    token_count = th.zeros(vocab_size, dtype=th.int64, device=device)
 
     # Process samples
     samples_to_process = dataset[:max_samples] if max_samples else dataset
+    num_batches = (len(samples_to_process) + batch_size - 1) // batch_size
 
     with th.no_grad():
-        for text in tqdm(samples_to_process, desc="Processing samples"):
-            # Tokenize
-            inputs = tokenizer(  # type: ignore[misc]
-                text,
+        for batch_idx in tqdm(range(num_batches), desc="Processing batches"):
+            # Get batch
+            start_idx = batch_idx * batch_size
+            end_idx = min(start_idx + batch_size, len(samples_to_process))
+            batch_texts = samples_to_process[start_idx:end_idx]
+
+            # Tokenize batch
+            inputs = tokenizer(
+                batch_texts,
                 return_tensors="pt",
                 max_length=max_length,
                 truncation=True,
+                padding=True,
             )
-
-            input_ids = inputs["input_ids"][0]  # Shape: [seq_len]
+            inputs = {k: v.to(device) for k, v in inputs.items()}
 
             # Run forward pass
             outputs = model(**inputs)
-            logits = outputs.logits[0]  # Shape: [seq_len, vocab_size]
+            logits = outputs.logits  # Shape: [batch_size, seq_len, vocab_size]
 
-            # For each token position (except last, which has no next token to predict)
-            for pos in range(len(input_ids) - 1):
-                token_id = input_ids[pos].item()
-                # Entropy of distribution when THIS token is the input
-                output_logits = logits[pos]  # Shape: [vocab_size]
-                entropy = compute_output_entropy(output_logits)
+            # Compute entropies for all positions at once (vectorized)
+            # logits shape: [batch_size, seq_len, vocab_size]
+            batch_size_actual, seq_len, _ = logits.shape
+            logits_2d = logits.view(-1, vocab_size)  # [batch_size * seq_len, vocab_size]
+            entropies = compute_output_entropy(
+                logits_2d, vocab_size, dim=-1
+            )  # [batch_size * seq_len]
+            entropies = entropies.view(batch_size_actual, seq_len)  # [batch_size, seq_len]
 
-                token_entropies[token_id].append(entropy)
+            # Get input token IDs (exclude last position as it has no next token)
+            input_ids = inputs["input_ids"]  # [batch_size, seq_len]
+
+            # Flatten for scatter operations (exclude last position)
+            # We want entropies[i, j] to correspond to input_ids[i, j]
+            for i in range(batch_size_actual):
+                # Get valid sequence length (excluding padding and last token)
+                attention_mask = inputs["attention_mask"][i]
+                valid_length = attention_mask.sum().item()
+
+                if valid_length > 1:  # Need at least 2 tokens
+                    # Exclude last position (no next token to predict)
+                    valid_tokens = input_ids[i, : valid_length - 1]  # [valid_length - 1]
+                    valid_entropies = entropies[i, : valid_length - 1]  # [valid_length - 1]
+
+                    # Scatter add entropies to accumulator
+                    entropy_sum.scatter_add_(0, valid_tokens, valid_entropies)
+
+                    # Scatter add counts (ones)
+                    ones = th.ones_like(valid_tokens, dtype=th.int64)
+                    token_count.scatter_add_(0, valid_tokens, ones)
+
+    # Compute average entropy per token (avoid division by zero)
+    avg_entropy = th.where(
+        token_count > 0, entropy_sum / token_count.float(), th.zeros_like(entropy_sum)
+    )
 
     logger.info(
         f"Processed {len(samples_to_process)} samples, "
-        f"tracked entropies for {len(token_entropies)} unique tokens"
+        f"tracked entropies for {(token_count > 0).sum().item()} unique tokens"
     )
 
-    return dict(token_entropies)
+    return avg_entropy
 
 
 def compute_token_entropy_trajectory(
     checkpoint_dirs: list[Path],
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizerBase,
     dataset: list[str],
+    vocab_size: int,
     token_ids: list[int],
     max_samples: int | None = None,
-) -> dict[int, dict[str, list[float]]]:
+    batch_size: int = 8,
+    device: str | None = None,
+) -> dict[int, TokenEntropyTrajectory]:
     """
     Compute entropy trajectory for specific tokens across checkpoints.
 
@@ -134,14 +182,17 @@ def compute_token_entropy_trajectory(
         checkpoint_dirs: List of checkpoint directories in training order
         tokenizer: Tokenizer for the model
         dataset: Validation dataset
+        vocab_size: Size of vocabulary
         token_ids: List of token IDs to track
         max_samples: Maximum samples per checkpoint
+        batch_size: Batch size for processing
+        device: Device to use (None = auto-detect)
 
     Returns:
-        Dictionary mapping token_id -> {"steps": [...], "entropies": [...]}
+        Dictionary mapping token_id -> TokenEntropyTrajectory
     """
-    results: dict[int, dict[str, list[float]]] = {
-        token_id: {"steps": [], "entropies": []} for token_id in token_ids
+    results: dict[int, TokenEntropyTrajectory] = {
+        token_id: TokenEntropyTrajectory(steps=[], entropies=[]) for token_id in token_ids
     }
 
     for checkpoint_dir in sorted(checkpoint_dirs):
@@ -154,25 +205,43 @@ def compute_token_entropy_trajectory(
             continue
 
         try:
-            # Process checkpoint
-            token_entropies = process_checkpoint_for_token_entropies(
-                checkpoint_dir, tokenizer, dataset, max_samples
+            logger.info(f"Loading checkpoint from {checkpoint_dir}")
+
+            # Load model
+            model = AutoModelForCausalLM.from_pretrained(
+                checkpoint_dir,
+                torch_dtype=th.float32,
+                trust_remote_code=True,
             )
 
-            # Record average entropy for each tracked token
+            # Compute average entropies for all tokens
+            avg_entropies = compute_token_entropies_from_model(
+                model,
+                tokenizer,
+                dataset,
+                vocab_size,
+                max_samples,
+                batch_size=batch_size,
+                device=device,
+            )
+
+            # Record entropy for each tracked token
             for token_id in token_ids:
-                if token_id in token_entropies and token_entropies[token_id]:
-                    avg_entropy = float(np.mean(token_entropies[token_id]))
-                    results[token_id]["steps"].append(step)
-                    results[token_id]["entropies"].append(avg_entropy)
+                entropy_value = avg_entropies[token_id].item()
+
+                if entropy_value > 0:  # Token was observed
+                    results[token_id].steps.append(step)
+                    results[token_id].entropies.append(entropy_value)
 
                     logger.info(
-                        f"Token {token_id} at step {step}: "
-                        f"avg entropy = {avg_entropy:.4f} "
-                        f"(from {len(token_entropies[token_id])} observations)"
+                        f"Token {token_id} at step {step}: avg entropy = {entropy_value:.4f}"
                     )
                 else:
                     logger.warning(f"Token {token_id} not found in checkpoint {step}")
+
+            # Clean up model to free memory
+            del model
+            th.cuda.empty_cache() if th.cuda.is_available() else None
 
         except Exception as e:
             logger.error(f"Error processing checkpoint {checkpoint_dir}: {e}")
@@ -182,9 +251,9 @@ def compute_token_entropy_trajectory(
 
 
 def plot_token_entropy_comparison(
-    baseline_data: dict[int, dict[str, list[float]]],
-    reasoning_data: dict[int, dict[str, list[float]]],
-    tokenizer: AutoTokenizer,
+    baseline_data: dict[int, TokenEntropyTrajectory],
+    reasoning_data: dict[int, TokenEntropyTrajectory],
+    tokenizer: PreTrainedTokenizerBase,
     output_path: Path,
 ) -> None:
     """
@@ -208,16 +277,17 @@ def plot_token_entropy_comparison(
     )
 
     for idx, token_id in enumerate(all_token_ids):
-        ax = axes[idx, 0]
+        ax = axes[idx, 0]  # pyright: ignore[reportIndexIssue]
 
         # Get token string
-        token_str = tokenizer.decode([token_id])  # type: ignore[misc]
+        token_str = tokenizer.decode([token_id])
 
         # Plot baseline
-        if token_id in baseline_data and baseline_data[token_id]["steps"]:
-            ax.plot(  # type: ignore[misc]
-                baseline_data[token_id]["steps"],
-                baseline_data[token_id]["entropies"],
+        if token_id in baseline_data and baseline_data[token_id].steps:
+            trajectory = baseline_data[token_id]
+            ax.plot(  # pyright: ignore[reportAttributeAccessIssue]
+                trajectory.steps,
+                trajectory.entropies,
                 marker="o",
                 label="Baseline Model",
                 linewidth=2,
@@ -225,21 +295,22 @@ def plot_token_entropy_comparison(
             )
 
         # Plot reasoning vocab model
-        if token_id in reasoning_data and reasoning_data[token_id]["steps"]:
-            ax.plot(  # type: ignore[misc]
-                reasoning_data[token_id]["steps"],
-                reasoning_data[token_id]["entropies"],
+        if token_id in reasoning_data and reasoning_data[token_id].steps:
+            trajectory = reasoning_data[token_id]
+            ax.plot(  # pyright: ignore[reportAttributeAccessIssue]
+                trajectory.steps,
+                trajectory.entropies,
                 marker="s",
                 label="Reasoning Vocab Model",
                 linewidth=2,
                 markersize=6,
             )
 
-        ax.set_xlabel("Training Step", fontsize=11)  # type: ignore[misc]
-        ax.set_ylabel("Average Output Entropy (nats)", fontsize=11)  # type: ignore[misc]
-        ax.set_title(f'Token: "{token_str}" (ID: {token_id})', fontsize=12)  # type: ignore[misc]
-        ax.legend(fontsize=10)  # type: ignore[misc]
-        ax.grid(True, alpha=0.3)  # type: ignore[misc]
+        ax.set_xlabel("Training Step", fontsize=11)  # pyright: ignore[reportAttributeAccessIssue]
+        ax.set_ylabel("Average Output Entropy (nats)", fontsize=11)  # pyright: ignore[reportAttributeAccessIssue]
+        ax.set_title(f'Token: "{token_str}" (ID: {token_id})', fontsize=12)  # pyright: ignore[reportAttributeAccessIssue]
+        ax.legend(fontsize=10)  # pyright: ignore[reportAttributeAccessIssue]
+        ax.grid(True, alpha=0.3)  # pyright: ignore[reportAttributeAccessIssue]
 
     plt.tight_layout()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,30 +351,32 @@ def visualize_token_entropy(
     # Load tokenizer (use from reasoning dir, should be same as baseline)
     logger.info("Loading tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(reasoning_dir, trust_remote_code=True)
+    vocab_size = len(tokenizer)
 
     # Load validation dataset
     logger.info(f"Loading dataset {dataset_name} ({dataset_split})")
     dataset = load_dataset(dataset_name, split=dataset_split)
 
     # Extract text field (adapt based on dataset structure)
-    if "question" in dataset.column_names:  # type: ignore[misc]
-        texts = [sample["question"] for sample in dataset]  # type: ignore[misc]
-    elif "text" in dataset.column_names:  # type: ignore[misc]
-        texts = [sample["text"] for sample in dataset]  # type: ignore[misc]
+    column_names = dataset.column_names  # pyright: ignore[reportAttributeAccessIssue]
+    if "question" in column_names:
+        texts = [sample["question"] for sample in dataset]  # pyright: ignore[reportIndexIssue]
+    elif "text" in column_names:
+        texts = [sample["text"] for sample in dataset]  # pyright: ignore[reportIndexIssue]
     else:
-        raise ValueError(f"Unknown dataset structure: {dataset.column_names}")
+        raise ValueError(f"Unknown dataset structure: {column_names}")
 
     logger.info(f"Loaded {len(texts)} samples from dataset")
 
     # Process baseline model
-    baseline_data = {}
+    baseline_data: dict[int, TokenEntropyTrajectory] = {}
     if baseline_dir is not None:
         logger.info("\n=== Processing Baseline Model ===")
         baseline_checkpoints = sorted(list(baseline_dir.glob("checkpoint-*")))
         logger.info(f"Found {len(baseline_checkpoints)} baseline checkpoints")
 
         baseline_data = compute_token_entropy_trajectory(
-            baseline_checkpoints, tokenizer, texts, token_ids, max_samples
+            baseline_checkpoints, tokenizer, texts, vocab_size, token_ids, max_samples
         )
 
     # Process reasoning vocab model
@@ -312,7 +385,7 @@ def visualize_token_entropy(
     logger.info(f"Found {len(reasoning_checkpoints)} reasoning checkpoints")
 
     reasoning_data = compute_token_entropy_trajectory(
-        reasoning_checkpoints, tokenizer, texts, token_ids, max_samples
+        reasoning_checkpoints, tokenizer, texts, vocab_size, token_ids, max_samples
     )
 
     # Create plots
