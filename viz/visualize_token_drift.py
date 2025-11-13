@@ -169,8 +169,8 @@ def load_checkpoint_embeddings(
     assert token_ids.dim() == 1
     assert token_ids.dtype == th.long
     assert token_ids.min() >= 0
-    assert token_ids.max() < all_embeddings.shape[0], (
-        f"Token ID {token_ids.max()} exceeds embedding layer size {all_embeddings.shape[0]}"
+    assert token_ids.max() < vocab_size, (
+        f"Token ID {token_ids.max()} exceeds vocab size {vocab_size}"
     )
 
     embeddings = all_embeddings[token_ids]
