@@ -8,6 +8,8 @@ This module tests:
 - Error handling for missing checkpoints
 """
 
+import json
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -24,6 +26,30 @@ from viz.visualize_token_drift import (
     plot_3d_drift,
     visualize_token_drift,
 )
+
+
+def create_reasoning_token_map(
+    checkpoint_path: Path, standard_token_ids: list[int], vocab_size: int = 100
+) -> None:
+    """Helper to create reasoning_token_map.json and config.json in a checkpoint directory."""
+    # Compute multiplicities
+    multiplicities = []
+    token_counts: dict[int, int] = {}
+
+    for token_id in standard_token_ids:
+        count = token_counts.get(token_id, 0)
+        multiplicities.append(count + 1)
+        token_counts[token_id] = count + 1
+
+    data = {"standard_token_ids": standard_token_ids, "multiplicities": multiplicities}
+
+    with open(checkpoint_path / "reasoning_token_map.json", "w") as f:
+        json.dump(data, f)
+
+    # Also create minimal config.json with vocab_size
+    config_data = {"vocab_size": vocab_size}
+    with open(checkpoint_path / "config.json", "w") as f:
+        json.dump(config_data, f)
 
 
 @pytest.fixture
@@ -368,11 +394,13 @@ class TestVisualizeTokenDrift:
         # Create checkpoint directories
         baseline = tmp_path / "baseline"
         baseline.mkdir()
+        create_reasoning_token_map(baseline, [])
 
         checkpoints = []
         for i in range(3):
             ckpt = tmp_path / f"checkpoint_{i}"
             ckpt.mkdir()
+            create_reasoning_token_map(ckpt, list(range(50)))  # 50 reasoning tokens
             checkpoints.append(ckpt)
 
         output_dir = tmp_path / "figures"
@@ -403,11 +431,13 @@ class TestVisualizeTokenDrift:
         """Test end-to-end 3D visualization."""
         baseline = tmp_path / "baseline"
         baseline.mkdir()
+        create_reasoning_token_map(baseline, [])
 
         checkpoints = []
         for i in range(3):
             ckpt = tmp_path / f"checkpoint_{i}"
             ckpt.mkdir()
+            create_reasoning_token_map(ckpt, list(range(50)))  # 50 reasoning tokens
             checkpoints.append(ckpt)
 
         output_dir = tmp_path / "figures"
@@ -437,9 +467,11 @@ class TestVisualizeTokenDrift:
         """Test error handling for invalid number of components."""
         baseline = tmp_path / "baseline"
         baseline.mkdir()
+        create_reasoning_token_map(baseline, [])
 
         checkpoints = [tmp_path / "checkpoint"]
         checkpoints[0].mkdir()
+        create_reasoning_token_map(checkpoints[0], list(range(50)))
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -457,9 +489,11 @@ class TestVisualizeTokenDrift:
         """Test visualization of output embeddings."""
         baseline = tmp_path / "baseline"
         baseline.mkdir()
+        create_reasoning_token_map(baseline, [])
 
         checkpoints = [tmp_path / "checkpoint"]
         checkpoints[0].mkdir()
+        create_reasoning_token_map(checkpoints[0], list(range(50)))
 
         output_dir = tmp_path / "figures"
 
@@ -488,12 +522,14 @@ class TestIntegration:
         """Test with multiple tokens tracked across multiple checkpoints."""
         baseline = tmp_path / "baseline"
         baseline.mkdir()
+        create_reasoning_token_map(baseline, [])
 
         num_checkpoints = 5
         checkpoints = []
         for i in range(num_checkpoints):
             ckpt = tmp_path / f"checkpoint_{i}"
             ckpt.mkdir()
+            create_reasoning_token_map(ckpt, list(range(50)))
             checkpoints.append(ckpt)
 
         output_dir = tmp_path / "figures"

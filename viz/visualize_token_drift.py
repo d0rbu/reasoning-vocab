@@ -94,13 +94,12 @@ def expand_token_ids_with_reasoning(
         (standard_token_id, multiplicity)
     """
     # Validate that all standard token IDs are within vocab_size
-    if reasoning_std_ids:
-        invalid_ids = [tid for tid in reasoning_std_ids if tid >= vocab_size]
-        if invalid_ids:
-            raise ValueError(
-                f"Invalid standard token IDs in reasoning map: {invalid_ids}. "
-                f"All standard token IDs must be < vocab_size ({vocab_size})"
-            )
+    invalid_ids = [tid for tid in reasoning_std_ids if tid >= vocab_size]
+    if invalid_ids:
+        raise ValueError(
+            f"Invalid standard token IDs in reasoning map: {invalid_ids}. "
+            f"All standard token IDs must be < vocab_size ({vocab_size})"
+        )
 
     if not reasoning_std_ids:
         return standard_token_ids

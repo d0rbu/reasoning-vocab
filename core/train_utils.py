@@ -7,7 +7,9 @@ This module contains:
 """
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 from loguru import logger
 from transformers import PreTrainedModel, TrainerCallback, TrainerControl, TrainerState
@@ -38,43 +40,29 @@ def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> N
     """
     map_path = checkpoint_path / "reasoning_token_map.json"
 
-    # Check if model has reasoning vocabulary extension
-    has_reasoning_vocab = hasattr(model, "reasoning_embed") or hasattr(
-        model, "reasoning_std_token_ids"
-    )
+    # Assert that model has get_reasoning_token_ids method
+    assert hasattr(
+        model, "get_reasoning_token_ids"
+    ), "Model must have get_reasoning_token_ids() method"
 
-    if not has_reasoning_vocab:
-        # Baseline model - save empty lists
-        data = {"standard_token_ids": [], "multiplicities": []}
-        logger.debug(f"Saving empty reasoning token map for baseline model at {map_path}")
-    else:
-        # Model with reasoning vocabulary - extract initialization info
-        if hasattr(model, "reasoning_std_token_ids") and hasattr(model, "reasoning_multiplicities"):
-            # Model stores these explicitly
-            std_ids = model.reasoning_std_token_ids
-            mults = model.reasoning_multiplicities
+    # Get reasoning token IDs (will be empty tuple for baseline models)
+    get_ids = cast(Callable[[], tuple[int, ...]], model.get_reasoning_token_ids)
+    standard_token_ids = list(get_ids())
 
-            # Convert torch tensors to lists if needed
-            if hasattr(std_ids, "tolist") and callable(getattr(std_ids, "tolist", None)):
-                std_ids = std_ids.tolist()  # type: ignore[union-attr]
-            if hasattr(mults, "tolist") and callable(getattr(mults, "tolist", None)):
-                mults = mults.tolist()  # type: ignore[union-attr]
+    # Compute multiplicities by counting occurrences of each token
+    multiplicities = []
+    token_counts: dict[int, int] = {}
 
-            data = {
-                "standard_token_ids": list(std_ids),  # type: ignore[arg-type]
-                "multiplicities": list(mults),  # type: ignore[arg-type]
-            }
-            logger.debug(
-                f"Saving reasoning token map with {len(std_ids)} reasoning tokens at {map_path}"  # type: ignore[arg-type]
-            )
-        else:
-            # Model has reasoning vocab but doesn't expose the mapping
-            # This shouldn't happen if the model is implemented correctly
-            logger.warning(
-                f"Model has reasoning_embed but no reasoning_std_token_ids/reasoning_multiplicities. "
-                f"Saving empty map at {map_path}"
-            )
-            data = {"standard_token_ids": [], "multiplicities": []}
+    for token_id in standard_token_ids:
+        # Get current count for this token (0 if first occurrence)
+        count = token_counts.get(token_id, 0)
+        # Multiplicity is count + 1 (first occurrence has multiplicity 1)
+        multiplicities.append(count + 1)
+        # Update count
+        token_counts[token_id] = count + 1
+
+    # Save the map
+    data = {"standard_token_ids": standard_token_ids, "multiplicities": multiplicities}
 
     # Ensure checkpoint directory exists
     checkpoint_path.mkdir(parents=True, exist_ok=True)
@@ -83,7 +71,12 @@ def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> N
     with open(map_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    logger.debug(f"Reasoning token map saved to {map_path}")
+    if standard_token_ids:
+        logger.debug(
+            f"Saved reasoning token map with {len(standard_token_ids)} reasoning tokens at {map_path}"
+        )
+    else:
+        logger.debug(f"Saved empty reasoning token map for baseline model at {map_path}")
 
 
 class ReasoningTokenMapCallback(TrainerCallback):
