@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import cast
 
 import matplotlib.pyplot as plt
-import numpy as np
 import torch as th
 from loguru import logger
 from matplotlib.figure import Figure
@@ -35,15 +34,14 @@ class EmbeddingType(str, Enum):
 
 
 @dataclass
-class TokenVariant:
+class TokenTrajectories:
     """Represents a single token variant with its multiplicity and trajectory."""
 
     token_id: int
-    multiplicity: int
-    trajectory: np.ndarray  # Shape: (num_checkpoints, hidden_size)
+    trajectories: th.Tensor  # Shape: (num_variants, num_checkpoints, hidden_size)
 
 
-def load_reasoning_token_map(checkpoint_path: Path) -> tuple[list[int], list[int]]:
+def load_reasoning_token_map(checkpoint_path: Path) -> tuple[th.Tensor, th.Tensor]:
     """
     Load reasoning token map from checkpoint.
 
@@ -52,7 +50,7 @@ def load_reasoning_token_map(checkpoint_path: Path) -> tuple[list[int], list[int
 
     Returns:
         Tuple of (standard_token_ids, multiplicities) where index i corresponds
-        to reasoning token vocab_size + i. Returns ([], []) for baseline models.
+        to reasoning token vocab_size + i. Returns empty tensors for baseline models.
     """
     map_path = checkpoint_path / "reasoning_token_map.json"
 
@@ -60,33 +58,38 @@ def load_reasoning_token_map(checkpoint_path: Path) -> tuple[list[int], list[int
         raise FileNotFoundError(
             f"reasoning_token_map.json not found at {map_path}. "
             "All checkpoints must have a reasoning_token_map.json file. "
-            "For baseline models, the file should contain empty lists: "
-            '{"standard_token_ids": [], "multiplicities": []}'
         )
 
     with open(map_path) as f:
         data = json.load(f)
 
-    standard_token_ids = data["standard_token_ids"]
-    multiplicities = data["multiplicities"]
+    raw_standard_token_ids = data["standard_token_ids"]
+    raw_multiplicities = data["multiplicities"]
 
-    logger.debug(f"Loaded reasoning token map with {len(standard_token_ids)} reasoning tokens")
+    standard_token_ids = th.tensor(raw_standard_token_ids)
+    multiplicities = th.tensor(raw_multiplicities)
+
+    assert standard_token_ids.dtype == th.long
+    assert multiplicities.dtype == th.long
+    assert standard_token_ids.shape == multiplicities.shape
+    assert standard_token_ids.dim() == 1
+
+    logger.debug(f"Loaded reasoning token map with {standard_token_ids.shape[0]} reasoning tokens")
     return standard_token_ids, multiplicities
 
 
 def expand_token_ids_with_reasoning(
-    standard_token_ids: list[int],
-    reasoning_std_ids: list[int],
-    reasoning_mults: list[int],
+    standard_token_ids: th.Tensor,
+    reasoning_std_ids: th.Tensor,
     vocab_size: int,
-) -> list[int]:
+) -> th.Tensor:
     """
     Expand standard token IDs to include all their reasoning variants.
 
     Args:
         standard_token_ids: List of standard token IDs to track
         reasoning_std_ids: Standard token IDs for each reasoning token (from map)
-        reasoning_mults: Multiplicities for each reasoning token (from map)
+        reasoning_multiplicities: Multiplicities for each reasoning token (from map)
         vocab_size: Size of standard vocabulary
 
     Returns:
@@ -94,37 +97,29 @@ def expand_token_ids_with_reasoning(
         (standard_token_id, multiplicity)
     """
     # Validate that all standard token IDs are within vocab_size
-    invalid_ids = [tid for tid in reasoning_std_ids if tid >= vocab_size]
-    if invalid_ids:
+    invalid_ids = standard_token_ids[standard_token_ids >= vocab_size]
+    if invalid_ids.numel() > 0:
         raise ValueError(
             f"Invalid standard token IDs in reasoning map: {invalid_ids}. "
-            f"All standard token IDs must be < vocab_size ({vocab_size})"
+            f"All standard token IDs must be < vocab_size ({vocab_size})."
         )
 
-    if not reasoning_std_ids:
-        return standard_token_ids
+    assert standard_token_ids.dim() == 1
 
-    all_ids = list(standard_token_ids)
+    present_standard_token_ids = th.zeros(vocab_size, dtype=th.bool)
+    present_standard_token_ids[standard_token_ids] = True
 
-    # Find all reasoning variants for each standard token
-    for std_id in standard_token_ids:
-        reasoning_variants = [
-            (vocab_size + i, mult)
-            for i, (s_id, mult) in enumerate(zip(reasoning_std_ids, reasoning_mults, strict=True))
-            if s_id == std_id
-        ]
-        # Sort by multiplicity
-        reasoning_variants.sort(key=lambda x: x[1])
-        all_ids.extend([rid for rid, _ in reasoning_variants])
+    present_reasoning_token_ids = present_standard_token_ids[reasoning_std_ids]
 
-    return all_ids
+    present_token_ids = th.cat([present_standard_token_ids, present_reasoning_token_ids])
+
+    return th.nonzero(present_token_ids).squeeze(-1)
 
 
 def load_checkpoint_embeddings(
     checkpoint_path: Path,
-    token_ids: list[int],
+    token_ids: th.Tensor,
     vocab_size: int,
-    reasoning_std_ids: list[int],
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
 ) -> th.Tensor:
     """
@@ -135,9 +130,9 @@ def load_checkpoint_embeddings(
 
     Args:
         checkpoint_path: Path to model checkpoint directory
-        token_ids: List of token IDs to extract embeddings for (may include reasoning tokens)
+        token_ids: Tensor of token IDs to extract embeddings for (may include reasoning tokens)
         vocab_size: Size of standard vocabulary
-        reasoning_std_ids: Standard token IDs used to initialize reasoning tokens
+        reasoning_standard_token_ids: Tensor of standard token IDs used to initialize reasoning tokens
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
@@ -150,26 +145,6 @@ def load_checkpoint_embeddings(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     logger.debug(f"Loading {embedding_type.value} embeddings from {checkpoint_path}")
-
-    # Translate reasoning token IDs to actual embedding indices
-    # For standard tokens (< vocab_size): use as-is
-    # For reasoning tokens (>= vocab_size): map to source standard token from the reasoning map
-    actual_indices = []
-    for token_id in token_ids:
-        if token_id < vocab_size:
-            # Standard token - use directly
-            actual_indices.append(token_id)
-        else:
-            # Reasoning token - map to source standard token using the provided reasoning map
-            reasoning_idx = token_id - vocab_size
-
-            if reasoning_idx >= len(reasoning_std_ids):
-                raise ValueError(
-                    f"Reasoning token {token_id} (index {reasoning_idx}) is out of bounds. "
-                    f"Reasoning map has {len(reasoning_std_ids)} tokens."
-                )
-            source_token_id = reasoning_std_ids[reasoning_idx]
-            actual_indices.append(source_token_id)
 
     # Load model checkpoint
     model = AutoModelForCausalLM.from_pretrained(
@@ -184,7 +159,15 @@ def load_checkpoint_embeddings(
     else:
         embed_layer = cast(nn.Linear, model.get_output_embeddings())
 
-    embeddings = cast(th.Tensor, embed_layer.weight.data[actual_indices])
+    all_embeddings = embed_layer.weight.data
+
+    assert all_embeddings.shape[0] == vocab_size
+    assert token_ids.dim() == 1
+    assert token_ids.dtype == th.long
+    assert token_ids.min() >= 0
+    assert token_ids.max() < vocab_size
+
+    embeddings = all_embeddings[token_ids]
 
     logger.debug(f"Loaded embeddings with shape: {embeddings.shape}")
     return embeddings
@@ -192,38 +175,36 @@ def load_checkpoint_embeddings(
 
 def collect_embedding_trajectories(
     checkpoint_dirs: list[Path],
-    token_ids: list[int],
+    token_ids: th.Tensor,
     vocab_size: int,
-    reasoning_std_ids: list[int],
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
-) -> np.ndarray:
+) -> th.Tensor:
     """
     Collect embedding trajectories across multiple checkpoints.
 
     Args:
         checkpoint_dirs: List of checkpoint directories in chronological order
-        token_ids: List of token IDs to track
+        token_ids: Tensor of token IDs to track
         vocab_size: Size of standard vocabulary
-        reasoning_std_ids: Standard token IDs used to initialize reasoning tokens
+        reasoning_standard_token_ids: Tensor of standard token IDs used to initialize reasoning tokens
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
-        Array of shape (num_checkpoints, num_tokens, hidden_size)
+        Tensor of shape (num_tokens, num_checkpoints, hidden_size)
     """
-    return np.array(
+    return th.stack(
         [
-            load_checkpoint_embeddings(
-                ckpt_dir, token_ids, vocab_size, reasoning_std_ids, embedding_type
-            ).numpy()
+            load_checkpoint_embeddings(ckpt_dir, token_ids, vocab_size, embedding_type)
             for ckpt_dir in checkpoint_dirs
-        ]
+        ],
+        dim=1,
     )
 
 
 def compute_pca_trajectories(
-    trajectories: np.ndarray,
+    trajectories: th.Tensor,
     n_components: int = 2,
-) -> tuple[np.ndarray, PCA]:
+) -> tuple[th.Tensor, PCA]:
     """
     Apply PCA to embedding trajectories.
 
@@ -255,7 +236,7 @@ def compute_pca_trajectories(
 
 
 def plot_2d_drift(
-    trajectories_dict: dict[str, np.ndarray],
+    trajectories_dict: dict[str, th.Tensor],
     token_labels: list[str] | None = None,
     title: str = "Token Embedding Drift (PCA)",
     save_path: Path | None = None,
@@ -352,7 +333,7 @@ def plot_2d_drift(
 
 
 def plot_3d_drift(
-    trajectories_dict: dict[str, np.ndarray],
+    trajectories_dict: dict[str, th.Tensor],
     token_labels: list[str] | None = None,
     title: str = "Token Embedding Drift (PCA 3D)",
     save_path: Path | None = None,
@@ -454,54 +435,45 @@ def plot_3d_drift(
 
 
 def group_trajectories_by_token_family(
-    trajectories: np.ndarray,
-    all_token_ids: list[int],
-    standard_token_ids: list[int],
-    reasoning_std_ids: list[int],
-    reasoning_mults: list[int],
-    vocab_size: int,
-) -> dict[int, list[TokenVariant]]:
+    trajectories: th.Tensor,
+    standard_token_ids: th.Tensor,
+    reasoning_standard_token_ids: th.Tensor,
+) -> list[TokenTrajectories]:
     """
     Group trajectories by standard token ID (token family).
 
     Args:
-        trajectories: Shape (num_checkpoints, num_tokens, hidden_size)
-        all_token_ids: All token IDs (standard + reasoning) in order
+        trajectories: Shape (num_tokens, num_checkpoints, hidden_size)
         standard_token_ids: Original standard token IDs requested
         reasoning_std_ids: Standard token IDs for each reasoning token (from map)
-        reasoning_mults: Multiplicities for each reasoning token (from map)
-        vocab_size: Size of standard vocabulary
 
     Returns:
-        Dictionary mapping standard_token_id -> list of TokenVariant objects,
-        sorted by multiplicity
+        List[TokenTrajectories]: Each item contains a standard token family and its variants' trajectories.
     """
-    token_families: dict[int, list[TokenVariant]] = {std_id: [] for std_id in standard_token_ids}
+    token_trajectories: list[TokenTrajectories] = [
+        TokenTrajectories(
+            token_id=token_id.item(),
+            trajectories=th.empty(
+                0,
+            ),
+        )
+        for token_id in standard_token_ids
+    ]
 
-    for idx, token_id in enumerate(all_token_ids):
-        traj = trajectories[:, idx, :]  # (num_checkpoints, hidden_size)
+    for standard_token_id in standard_token_ids:
+        reasoning_variant_indices = th.nonzero(
+            reasoning_standard_token_ids == standard_token_id
+        ).squeeze(-1)
 
-        if token_id < vocab_size:
-            # Standard token (multiplicity 0)
-            token_families[token_id].append(TokenVariant(token_id, 0, traj))
-        else:
-            # Reasoning token - look up its standard ID and multiplicity
-            reasoning_idx = token_id - vocab_size
-            std_id = reasoning_std_ids[reasoning_idx]
-            mult = reasoning_mults[reasoning_idx]
-            token_families[std_id].append(TokenVariant(token_id, mult, traj))
+        token_trajectories[standard_token_id].trajectories = trajectories[reasoning_variant_indices]
 
-    # Sort each family by multiplicity
-    for std_id in token_families:
-        token_families[std_id].sort(key=lambda variant: variant.multiplicity)
-
-    return token_families
+    return token_trajectories
 
 
 def visualize_token_drift(
     baseline_checkpoint: Path,
     reasoning_checkpoints: list[Path],
-    token_ids: list[int],
+    token_ids_raw: list[int],
     token_labels: list[str] | None = None,
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
     n_components: int = 2,
@@ -537,12 +509,17 @@ def visualize_token_drift(
         Dictionary mapping figure names to Figure objects
     """
     logger.info(f"Visualizing token drift for {len(token_ids)} standard tokens")
-    logger.info(f"Baseline: {baseline_checkpoint}")
-    logger.info(f"Reasoning checkpoints: {len(reasoning_checkpoints)}")
+    logger.trace(f"Token IDs: {token_ids_raw}")
+    logger.debug(f"Baseline: {baseline_checkpoint}")
+    logger.debug(f"Number of reasoning checkpoints: {len(reasoning_checkpoints)}")
+    logger.trace(f"Reasoning checkpoints: {reasoning_checkpoints}")
 
     # Load reasoning token map from first reasoning checkpoint
-    logger.info("Loading reasoning token map...")
-    reasoning_std_ids, reasoning_mults = load_reasoning_token_map(reasoning_checkpoints[0])
+    logger.debug("Loading reasoning token map...")
+    reasoning_standard_token_ids, reasoning_multiplicities = load_reasoning_token_map(
+        reasoning_checkpoints[0]
+    )
+    token_ids = th.tensor(token_ids_raw, dtype=th.long)
 
     # Get vocab_size from config (required)
     config_path = reasoning_checkpoints[0] / "config.json"
@@ -558,30 +535,29 @@ def visualize_token_drift(
 
     # Expand token IDs to include all reasoning variants
     all_token_ids = expand_token_ids_with_reasoning(
-        token_ids, reasoning_std_ids, reasoning_mults, vocab_size
+        token_ids, reasoning_standard_token_ids, vocab_size
     )
-    logger.info(f"Tracking {len(all_token_ids)} total tokens (including reasoning variants)")
+    logger.debug(f"Tracking {len(all_token_ids)} total tokens (including reasoning variants)")
 
     # Collect all trajectories in one pass
     all_checkpoints = [baseline_checkpoint] + reasoning_checkpoints
-    logger.info(f"Collecting embeddings from {len(all_checkpoints)} checkpoints...")
+    logger.debug(f"Collecting embeddings from {len(all_checkpoints)} checkpoints...")
     all_trajectories = collect_embedding_trajectories(
-        all_checkpoints, all_token_ids, vocab_size, reasoning_std_ids, embedding_type
+        all_checkpoints, all_token_ids, vocab_size, embedding_type
     )
     # Shape: (num_checkpoints, num_tokens, hidden_size)
 
     # Group trajectories by token family
     logger.info("Grouping trajectories by token family...")
-    token_families = group_trajectories_by_token_family(
-        all_trajectories, all_token_ids, token_ids, reasoning_std_ids, reasoning_mults, vocab_size
+    token_trajectories = group_trajectories_by_token_family(
+        all_trajectories,
+        token_ids,
+        reasoning_standard_token_ids,
     )
 
-    # Log family statistics
-    for std_id in token_ids:
-        family = token_families[std_id]
+    for token_trajectory in token_trajectories:
         logger.debug(
-            f"Token {std_id}: {len(family)} variants (multiplicities: "
-            f"{[variant.multiplicity for variant in family]})"
+            f"Token {token_trajectory.token_id} trajectories shape: {token_trajectory.trajectories.shape}"
         )
 
     figures = {}

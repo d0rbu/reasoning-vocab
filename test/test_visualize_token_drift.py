@@ -237,7 +237,7 @@ class TestCollectEmbeddingTrajectories:
             )
 
             assert trajectories.shape == (1, 3, 128)
-            assert isinstance(trajectories, np.ndarray)
+            assert isinstance(trajectories, th.Tensor)
 
     def test_collect_multiple_checkpoints(self, tmp_path, mock_model_with_embeddings):
         """Test collecting trajectories from multiple checkpoints."""
@@ -263,7 +263,7 @@ class TestCollectEmbeddingTrajectories:
             )
 
             assert trajectories.shape == (3, 3, 128)
-            assert isinstance(trajectories, np.ndarray)
+            assert isinstance(trajectories, th.Tensor)
 
     def test_collect_reasoning_trajectories(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test collecting reasoning vocabulary trajectories."""
@@ -285,7 +285,7 @@ class TestCollectEmbeddingTrajectories:
             )
 
             assert trajectories.shape == (1, 3, 128)
-            assert isinstance(trajectories, np.ndarray)
+            assert isinstance(trajectories, th.Tensor)
 
 
 class TestComputePCATrajectories:
@@ -296,7 +296,7 @@ class TestComputePCATrajectories:
         pca_traj, pca_model = compute_pca_trajectories(sample_trajectories, n_components=2)
 
         assert pca_traj.shape == (5, 3, 2)
-        assert isinstance(pca_traj, np.ndarray)
+        assert isinstance(pca_traj, th.Tensor)
         assert pca_model.n_components == 2
 
     def test_pca_3d(self, sample_trajectories):
@@ -304,7 +304,7 @@ class TestComputePCATrajectories:
         pca_traj, pca_model = compute_pca_trajectories(sample_trajectories, n_components=3)
 
         assert pca_traj.shape == (5, 3, 3)
-        assert isinstance(pca_traj, np.ndarray)
+        assert isinstance(pca_traj, th.Tensor)
         assert pca_model.n_components == 3
 
     def test_pca_explained_variance(self, sample_trajectories):
