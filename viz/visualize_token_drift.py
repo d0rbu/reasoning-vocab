@@ -180,8 +180,10 @@ def load_checkpoint_embeddings(
 
         if embedding_type == EmbeddingType.INPUT:
             if hasattr(model, "reasoning_embed"):
-                reasoning_embed_layer = model.reasoning_embed
-                reasoning_embeddings = reasoning_embed_layer.weight.data[reasoning_indices]
+                reasoning_embed_layer = cast(nn.Embedding, model.reasoning_embed)
+                reasoning_embeddings = cast(
+                    th.Tensor, reasoning_embed_layer.weight.data[reasoning_indices]
+                )
                 embeddings_list.append(reasoning_embeddings)
             else:
                 raise ValueError(
@@ -190,8 +192,10 @@ def load_checkpoint_embeddings(
                 )
         else:  # OUTPUT
             if hasattr(model, "reasoning_unembed"):
-                reasoning_unembed_layer = model.reasoning_unembed
-                reasoning_embeddings = reasoning_unembed_layer.weight.data[reasoning_indices]
+                reasoning_unembed_layer = cast(nn.Linear, model.reasoning_unembed)
+                reasoning_embeddings = cast(
+                    th.Tensor, reasoning_unembed_layer.weight.data[reasoning_indices]
+                )
                 embeddings_list.append(reasoning_embeddings)
             else:
                 raise ValueError(
