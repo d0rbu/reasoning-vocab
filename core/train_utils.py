@@ -10,10 +10,11 @@ import json
 from pathlib import Path
 
 from loguru import logger
-from transformers import TrainerCallback, TrainerControl, TrainerState
+from transformers import AutoTokenizer, TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
 from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.tokenizer_utils import ReasoningTokenizer
 
 
 def save_reasoning_token_map(checkpoint_path: Path, model: Qwen3ReasoningVocabForCausalLM) -> None:
@@ -44,19 +45,15 @@ def save_reasoning_token_map(checkpoint_path: Path, model: Qwen3ReasoningVocabFo
     # These are the standard token IDs that were used to initialize each reasoning token
     reasoning_token_ids = list(model.get_reasoning_token_ids())
 
-    # Compute multiplicities by counting occurrences of each token
-    # This matches the logic in ReasoningTokenizer._build_reasoning_mapping()
-    # but outputs 1-indexed multiplicities (1, 2, 3...) instead of 0-indexed (0, 1, 2...)
-    multiplicities = []
-    token_counts: dict[int, int] = {}
+    # Use ReasoningTokenizer to compute multiplicities
+    # We create a temporary tokenizer just to leverage its multiplicity computation
+    # Note: We need to load the actual tokenizer from checkpoint for proper vocab_size
+    base_tokenizer = AutoTokenizer.from_pretrained(checkpoint_path)
+    reasoning_tokenizer = ReasoningTokenizer(base_tokenizer, reasoning_token_ids)
 
-    for token_id in reasoning_token_ids:
-        # Get current count for this token (0 if first occurrence)
-        count = token_counts.get(token_id, 0)
-        # Multiplicity is count + 1 (first occurrence has multiplicity 1)
-        multiplicities.append(count + 1)
-        # Update count
-        token_counts[token_id] = count + 1
+    # Get multiplicities from the reasoning tokenizer (0-indexed: 0, 1, 2...)
+    # Convert to 1-indexed for checkpoint format (1, 2, 3...)
+    multiplicities = (reasoning_tokenizer.reasoning_to_multiplicity + 1).tolist()
 
     # Save the map
     # standard_token_ids: which standard token initialized each reasoning token
