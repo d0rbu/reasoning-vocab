@@ -144,12 +144,11 @@ class TestLoadCheckpointEmbeddings:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_embeddings,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -166,12 +165,11 @@ class TestLoadCheckpointEmbeddings:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_embeddings,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.OUTPUT,
             )
 
@@ -188,12 +186,11 @@ class TestLoadCheckpointEmbeddings:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_reasoning_vocab,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=list(range(50)),
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -207,9 +204,8 @@ class TestLoadCheckpointEmbeddings:
         with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
             load_checkpoint_embeddings(
                 checkpoint_path,
-                [0, 1],
+                th.tensor([0, 1]),
                 vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -227,16 +223,15 @@ class TestCollectEmbeddingTrajectories:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_embeddings,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             trajectories = collect_embedding_trajectories(
                 [checkpoint_path],
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
-            assert trajectories.shape == (1, 3, 128)
+            assert trajectories.shape == (3, 1, 128)  # (num_tokens, num_checkpoints, hidden_size)
             assert isinstance(trajectories, th.Tensor)
 
     def test_collect_multiple_checkpoints(self, tmp_path, mock_model_with_embeddings):
@@ -253,16 +248,15 @@ class TestCollectEmbeddingTrajectories:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_embeddings,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             trajectories = collect_embedding_trajectories(
                 checkpoints,
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
-            assert trajectories.shape == (3, 3, 128)
+            assert trajectories.shape == (3, 3, 128)  # (num_tokens, num_checkpoints, hidden_size)
             assert isinstance(trajectories, th.Tensor)
 
     def test_collect_reasoning_trajectories(self, tmp_path, mock_model_with_reasoning_vocab):
@@ -275,16 +269,15 @@ class TestCollectEmbeddingTrajectories:
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
             return_value=mock_model_with_reasoning_vocab,
         ):
-            token_ids = [0, 1, 2]
+            token_ids = th.tensor([0, 1, 2])
             trajectories = collect_embedding_trajectories(
                 [checkpoint_path],
                 token_ids,
                 vocab_size=100,
-                reasoning_std_ids=list(range(50)),
                 embedding_type=EmbeddingType.INPUT,
             )
 
-            assert trajectories.shape == (1, 3, 128)
+            assert trajectories.shape == (3, 1, 128)  # (num_tokens, num_checkpoints, hidden_size)
             assert isinstance(trajectories, th.Tensor)
 
 
@@ -296,7 +289,7 @@ class TestComputePCATrajectories:
         pca_traj, pca_model = compute_pca_trajectories(sample_trajectories, n_components=2)
 
         assert pca_traj.shape == (5, 3, 2)
-        assert isinstance(pca_traj, th.Tensor)
+        assert isinstance(pca_traj, np.ndarray)  # PCA returns numpy array
         assert pca_model.n_components == 2
 
     def test_pca_3d(self, sample_trajectories):
@@ -304,7 +297,7 @@ class TestComputePCATrajectories:
         pca_traj, pca_model = compute_pca_trajectories(sample_trajectories, n_components=3)
 
         assert pca_traj.shape == (5, 3, 3)
-        assert isinstance(pca_traj, th.Tensor)
+        assert isinstance(pca_traj, np.ndarray)  # PCA returns numpy array
         assert pca_model.n_components == 3
 
     def test_pca_explained_variance(self, sample_trajectories):
@@ -448,7 +441,7 @@ class TestVisualizeTokenDrift:
             figures = visualize_token_drift(
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
-                token_ids=[0, 1, 2],
+                token_ids_raw=[0, 1, 2],
                 token_labels=["a", "b", "c"],
                 embedding_type=EmbeddingType.INPUT,
                 n_components=2,
@@ -485,7 +478,7 @@ class TestVisualizeTokenDrift:
             figures = visualize_token_drift(
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
-                token_ids=[0, 1, 2],
+                token_ids_raw=[0, 1, 2],
                 embedding_type=EmbeddingType.OUTPUT,
                 n_components=3,
                 output_dir=output_dir,
@@ -517,7 +510,7 @@ class TestVisualizeTokenDrift:
                 visualize_token_drift(
                     baseline_checkpoint=baseline,
                     reasoning_checkpoints=checkpoints,
-                    token_ids=[0, 1],
+                    token_ids_raw=[0, 1],
                     n_components=4,  # Invalid
                 )
 
@@ -540,7 +533,7 @@ class TestVisualizeTokenDrift:
             figures = visualize_token_drift(
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
-                token_ids=[0, 1],
+                token_ids_raw=[0, 1],
                 embedding_type=EmbeddingType.OUTPUT,
                 n_components=2,
                 output_dir=output_dir,
@@ -580,7 +573,7 @@ class TestIntegration:
             figures = visualize_token_drift(
                 baseline_checkpoint=baseline,
                 reasoning_checkpoints=checkpoints,
-                token_ids=token_ids,
+                token_ids_raw=token_ids,
                 token_labels=token_labels,
                 embedding_type=EmbeddingType.INPUT,
                 n_components=2,

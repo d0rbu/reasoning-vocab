@@ -508,7 +508,7 @@ def visualize_token_drift(
     Returns:
         Dictionary mapping figure names to Figure objects
     """
-    logger.info(f"Visualizing token drift for {len(token_ids)} standard tokens")
+    logger.info(f"Visualizing token drift for {len(token_ids_raw)} standard tokens")
     logger.trace(f"Token IDs: {token_ids_raw}")
     logger.debug(f"Baseline: {baseline_checkpoint}")
     logger.debug(f"Number of reasoning checkpoints: {len(reasoning_checkpoints)}")
