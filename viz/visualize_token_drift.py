@@ -151,13 +151,56 @@ def load_checkpoint_embeddings(
         device_map="cpu",
     )
 
-    # Get embeddings based on type
-    if embedding_type == EmbeddingType.INPUT:
-        embed_layer = cast(nn.Embedding, model.get_input_embeddings())
-    else:
-        embed_layer = cast(nn.Linear, model.get_output_embeddings())
+    # Get vocab size to determine which embeddings to use
+    config_path = checkpoint_path / "config.json"
+    with open(config_path) as f:
+        config = json.load(f)
+    vocab_size = config["vocab_size"]
 
-    embeddings = cast(th.Tensor, embed_layer.weight.data[token_ids])
+    # Separate standard and reasoning token IDs
+    standard_ids = [tid for tid in token_ids if tid < vocab_size]
+    reasoning_ids = [tid for tid in token_ids if tid >= vocab_size]
+
+    # Load standard embeddings
+    if embedding_type == EmbeddingType.INPUT:
+        standard_embed_layer = cast(nn.Embedding, model.get_input_embeddings())
+    else:
+        standard_embed_layer = cast(nn.Linear, model.get_output_embeddings())
+
+    embeddings_list = []
+
+    if standard_ids:
+        standard_embeddings = standard_embed_layer.weight.data[standard_ids]
+        embeddings_list.append(standard_embeddings)
+
+    # Load reasoning embeddings if present
+    if reasoning_ids:
+        # Convert reasoning token IDs to indices in reasoning vocabulary
+        reasoning_indices = [tid - vocab_size for tid in reasoning_ids]
+
+        if embedding_type == EmbeddingType.INPUT:
+            if hasattr(model, "reasoning_embed"):
+                reasoning_embed_layer = model.reasoning_embed
+                reasoning_embeddings = reasoning_embed_layer.weight.data[reasoning_indices]
+                embeddings_list.append(reasoning_embeddings)
+            else:
+                raise ValueError(
+                    f"Model at {checkpoint_path} does not have reasoning_embed layer, "
+                    f"but reasoning token IDs {reasoning_ids} were requested"
+                )
+        else:  # OUTPUT
+            if hasattr(model, "reasoning_unembed"):
+                reasoning_unembed_layer = model.reasoning_unembed
+                reasoning_embeddings = reasoning_unembed_layer.weight.data[reasoning_indices]
+                embeddings_list.append(reasoning_embeddings)
+            else:
+                raise ValueError(
+                    f"Model at {checkpoint_path} does not have reasoning_unembed layer, "
+                    f"but reasoning token IDs {reasoning_ids} were requested"
+                )
+
+    # Concatenate all embeddings in the original order
+    embeddings = th.cat(embeddings_list, dim=0)
 
     logger.debug(f"Loaded embeddings with shape: {embeddings.shape}")
     return embeddings
@@ -171,20 +214,65 @@ def collect_embedding_trajectories(
     """
     Collect embedding trajectories across multiple checkpoints.
 
+    For each checkpoint, only loads tokens that exist in that checkpoint's vocabulary.
+    Pads with zeros for tokens that don't exist (e.g., reasoning tokens in baseline).
+
     Args:
         checkpoint_dirs: List of checkpoint directories in chronological order
-        token_ids: List of token IDs to track
+        token_ids: List of token IDs to track (may include reasoning tokens)
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
         Array of shape (num_checkpoints, num_tokens, hidden_size)
     """
-    return np.array(
-        [
-            load_checkpoint_embeddings(ckpt_dir, token_ids, embedding_type).numpy()
-            for ckpt_dir in checkpoint_dirs
-        ]
-    )
+    trajectories = []
+
+    for ckpt_dir in checkpoint_dirs:
+        # Load reasoning token map to determine vocab size
+        reasoning_std_ids, reasoning_mults = load_reasoning_token_map(ckpt_dir)
+
+        # Get standard vocab size from config
+        config_path = ckpt_dir / "config.json"
+        with open(config_path) as f:
+            config = json.load(f)
+        vocab_size = config["vocab_size"]
+
+        # Total vocab size includes reasoning tokens if they exist
+        total_vocab_size = vocab_size + len(reasoning_std_ids)
+
+        # Filter token IDs to only those that exist in this checkpoint
+        valid_token_ids = [tid for tid in token_ids if tid < total_vocab_size]
+
+        logger.debug(
+            f"Checkpoint {ckpt_dir.name}: vocab_size={vocab_size}, "
+            f"reasoning_tokens={len(reasoning_std_ids)}, total={total_vocab_size}, "
+            f"valid_ids={valid_token_ids[:10]}..."  # Show first 10
+        )
+
+        # Load embeddings for valid tokens
+        embeddings = load_checkpoint_embeddings(ckpt_dir, valid_token_ids, embedding_type).numpy()
+
+        # Create full tensor with zeros for missing tokens
+        # First load one embedding to get hidden_size
+        if len(valid_token_ids) > 0:
+            hidden_size = embeddings.shape[1]
+        else:
+            # Fallback: load one token to get hidden size
+            fallback_emb = load_checkpoint_embeddings(ckpt_dir, [0], embedding_type).numpy()
+            hidden_size = fallback_emb.shape[1]
+            embeddings = np.empty((0, hidden_size))
+
+        # Build full embedding array with zeros for missing tokens
+        full_embeddings = np.zeros((len(token_ids), hidden_size))
+        valid_idx = 0
+        for i, tid in enumerate(token_ids):
+            if tid < total_vocab_size:
+                full_embeddings[i] = embeddings[valid_idx]
+                valid_idx += 1
+
+        trajectories.append(full_embeddings)
+
+    return np.array(trajectories)
 
 
 def compute_pca_trajectories(
