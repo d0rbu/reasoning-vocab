@@ -57,8 +57,12 @@ def load_reasoning_token_map(checkpoint_path: Path) -> tuple[list[int], list[int
     map_path = checkpoint_path / "reasoning_token_map.json"
 
     if not map_path.exists():
-        logger.debug(f"No reasoning token map found at {map_path}, assuming baseline")
-        return ([], [])
+        raise FileNotFoundError(
+            f"reasoning_token_map.json not found at {map_path}. "
+            "All checkpoints must have a reasoning_token_map.json file. "
+            "For baseline models, the file should contain empty lists: "
+            '{"standard_token_ids": [], "multiplicities": []}'
+        )
 
     with open(map_path) as f:
         data = json.load(f)
@@ -67,7 +71,7 @@ def load_reasoning_token_map(checkpoint_path: Path) -> tuple[list[int], list[int
     multiplicities = data["multiplicities"]
 
     logger.debug(f"Loaded reasoning token map with {len(standard_token_ids)} reasoning tokens")
-    return (standard_token_ids, multiplicities)
+    return standard_token_ids, multiplicities
 
 
 def expand_token_ids_with_reasoning(
@@ -89,6 +93,15 @@ def expand_token_ids_with_reasoning(
         List of all token IDs (standard + reasoning variants) sorted by
         (standard_token_id, multiplicity)
     """
+    # Validate that all standard token IDs are within vocab_size
+    if reasoning_std_ids:
+        invalid_ids = [tid for tid in reasoning_std_ids if tid >= vocab_size]
+        if invalid_ids:
+            raise ValueError(
+                f"Invalid standard token IDs in reasoning map: {invalid_ids}. "
+                f"All standard token IDs must be < vocab_size ({vocab_size})"
+            )
+
     if not reasoning_std_ids:
         return standard_token_ids
 
