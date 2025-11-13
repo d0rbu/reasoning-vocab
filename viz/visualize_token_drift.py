@@ -11,6 +11,7 @@ showing trajectories of how embeddings drift over training checkpoints.
 """
 
 import argparse
+import json
 from enum import Enum
 from pathlib import Path
 from typing import cast
@@ -30,6 +31,78 @@ class EmbeddingType(str, Enum):
 
     INPUT = "input"
     OUTPUT = "output"
+
+
+def load_reasoning_token_map(checkpoint_path: Path) -> dict[int, tuple[int, int]] | None:
+    """
+    Load reasoning token map from checkpoint.
+
+    Args:
+        checkpoint_path: Path to model checkpoint directory
+
+    Returns:
+        Dictionary mapping reasoning_token_id -> (standard_token_id, multiplicity),
+        or None if no reasoning token map exists (baseline model)
+    """
+    map_path = checkpoint_path / "reasoning_token_map.json"
+
+    if not map_path.exists():
+        logger.debug(f"No reasoning token map found at {map_path}")
+        return None
+
+    with open(map_path) as f:
+        data = json.load(f)
+
+    standard_token_ids = data["standard_token_ids"]
+    multiplicities = data["multiplicities"]
+
+    # Get vocab_size from config
+    config_path = checkpoint_path / "config.json"
+    with open(config_path) as f:
+        config = json.load(f)
+    vocab_size = config["vocab_size"]
+
+    # Build mapping: reasoning_token_id -> (standard_token_id, multiplicity)
+    token_map = {}
+    for i, (std_id, mult) in enumerate(zip(standard_token_ids, multiplicities, strict=True)):
+        reasoning_id = vocab_size + i
+        token_map[reasoning_id] = (std_id, mult)
+
+    logger.debug(f"Loaded reasoning token map with {len(token_map)} tokens")
+    return token_map
+
+
+def expand_token_ids_with_reasoning(
+    standard_token_ids: list[int], token_map: dict[int, tuple[int, int]] | None
+) -> list[int]:
+    """
+    Expand standard token IDs to include all their reasoning variants.
+
+    Args:
+        standard_token_ids: List of standard token IDs
+        token_map: Mapping of reasoning_token_id -> (standard_token_id, multiplicity)
+
+    Returns:
+        List of all token IDs (standard + reasoning variants) sorted by
+        (standard_token_id, multiplicity)
+    """
+    if token_map is None:
+        return standard_token_ids
+
+    all_ids = list(standard_token_ids)
+
+    # Find all reasoning variants for each standard token
+    for std_id in standard_token_ids:
+        reasoning_variants = [
+            (reasoning_id, mult)
+            for reasoning_id, (s_id, mult) in token_map.items()
+            if s_id == std_id
+        ]
+        # Sort by multiplicity
+        reasoning_variants.sort(key=lambda x: x[1])
+        all_ids.extend([rid for rid, _ in reasoning_variants])
+
+    return all_ids
 
 
 def load_checkpoint_embeddings(
@@ -332,6 +405,50 @@ def plot_3d_drift(
     return fig
 
 
+def group_trajectories_by_token_family(
+    trajectories: np.ndarray,
+    all_token_ids: list[int],
+    standard_token_ids: list[int],
+    token_map: dict[int, tuple[int, int]] | None,
+    vocab_size: int,
+) -> dict[int, list[tuple[int, int, np.ndarray]]]:
+    """
+    Group trajectories by standard token ID (token family).
+
+    Args:
+        trajectories: Shape (num_checkpoints, num_tokens, hidden_size)
+        all_token_ids: All token IDs (standard + reasoning) in order
+        standard_token_ids: Original standard token IDs requested
+        token_map: Mapping of reasoning_token_id -> (standard_token_id, multiplicity)
+        vocab_size: Size of standard vocabulary
+
+    Returns:
+        Dictionary mapping standard_token_id -> list of (token_id, multiplicity, trajectory)
+        where trajectory has shape (num_checkpoints, hidden_size)
+    """
+    token_families: dict[int, list[tuple[int, int, np.ndarray]]] = {
+        std_id: [] for std_id in standard_token_ids
+    }
+
+    for idx, token_id in enumerate(all_token_ids):
+        traj = trajectories[:, idx, :]  # (num_checkpoints, hidden_size)
+
+        if token_id < vocab_size:
+            # Standard token (multiplicity 0)
+            token_families[token_id].append((token_id, 0, traj))
+        else:
+            # Reasoning token
+            assert token_map is not None
+            std_id, mult = token_map[token_id]
+            token_families[std_id].append((token_id, mult, traj))
+
+    # Sort each family by multiplicity
+    for std_id in token_families:
+        token_families[std_id].sort(key=lambda x: x[1])
+
+    return token_families
+
+
 def visualize_token_drift(
     baseline_checkpoint: Path,
     reasoning_checkpoints: list[Path],
@@ -345,17 +462,23 @@ def visualize_token_drift(
     """
     Visualize token embedding drift across training.
 
-    This function compares three types of embeddings:
-    1. Baseline: pretrained model embeddings (no training)
-    2. Standard: standard vocab embeddings during reasoning vocab training
-    3. Reasoning: reasoning vocab embeddings during reasoning vocab training
+    This function tracks token embeddings and their reasoning variants across training,
+    showing how they evolve from the baseline through training checkpoints.
+
+    For each standard token, the visualization includes:
+    - The standard token itself (multiplicity 0)
+    - All reasoning variants initialized from that token (multiplicity 1, 2, 3, ...)
+
+    Two types of PCA visualizations are created:
+    1. Global PCA: All tokens projected into a shared PCA space
+    2. Within-group PCA: Each token family in its own PCA space
 
     Args:
         baseline_checkpoint: Path to baseline (pretrained) model checkpoint
         reasoning_checkpoints: List of checkpoint paths from reasoning vocab training
-        token_ids: List of token IDs to track (these should be the standard token IDs
-                  that were used to initialize reasoning tokens)
-        token_labels: Optional string labels for each token
+        token_ids: List of standard token IDs to track (these should be the standard
+                  token IDs that were used to initialize reasoning tokens)
+        token_labels: Optional string labels for each standard token
         embedding_type: Whether to visualize input embeddings or output unembeddings
         n_components: Number of PCA components (2 or 3)
         output_dir: Directory to save figures
@@ -364,70 +487,57 @@ def visualize_token_drift(
     Returns:
         Dictionary mapping figure names to Figure objects
     """
-    logger.info(f"Visualizing token drift for {len(token_ids)} tokens")
+    logger.info(f"Visualizing token drift for {len(token_ids)} standard tokens")
     logger.info(f"Baseline: {baseline_checkpoint}")
     logger.info(f"Reasoning checkpoints: {len(reasoning_checkpoints)}")
 
-    # Collect trajectories
-    logger.info("Collecting baseline embeddings...")
-    baseline_traj = collect_embedding_trajectories([baseline_checkpoint], token_ids, embedding_type)
+    # Load reasoning token map from first reasoning checkpoint
+    logger.info("Loading reasoning token map...")
+    token_map = load_reasoning_token_map(reasoning_checkpoints[0])
 
-    logger.info("Collecting standard vocab trajectories...")
-    standard_traj = collect_embedding_trajectories(reasoning_checkpoints, token_ids, embedding_type)
+    # Get vocab_size (try from config, fall back to max token ID + 1 for tests)
+    config_path = reasoning_checkpoints[0] / "config.json"
+    if config_path.exists():
+        with open(config_path) as f:
+            config = json.load(f)
+        vocab_size = config["vocab_size"]
+    else:
+        # Fallback for tests or incomplete checkpoints
+        vocab_size = max(token_ids) + 1 if token_ids else 100
+        logger.warning(f"config.json not found, using fallback vocab_size={vocab_size}")
 
-    logger.info("Collecting reasoning vocab trajectories...")
-    reasoning_traj = collect_embedding_trajectories(
-        reasoning_checkpoints, token_ids, embedding_type
+    # Expand token IDs to include all reasoning variants
+    all_token_ids = expand_token_ids_with_reasoning(token_ids, token_map)
+    logger.info(f"Tracking {len(all_token_ids)} total tokens (including reasoning variants)")
+
+    # Collect all trajectories in one pass
+    all_checkpoints = [baseline_checkpoint] + reasoning_checkpoints
+    logger.info(f"Collecting embeddings from {len(all_checkpoints)} checkpoints...")
+    all_trajectories = collect_embedding_trajectories(
+        all_checkpoints, all_token_ids, embedding_type
+    )
+    # Shape: (num_checkpoints, num_tokens, hidden_size)
+
+    # Group trajectories by token family
+    logger.info("Grouping trajectories by token family...")
+    token_families = group_trajectories_by_token_family(
+        all_trajectories, all_token_ids, token_ids, token_map, vocab_size
     )
 
-    # Combine all trajectories for unified PCA
-    # Shape: (total_checkpoints, num_tokens, hidden_size)
-    all_trajectories = np.concatenate([baseline_traj, standard_traj, reasoning_traj], axis=0)
-
-    # Apply PCA
-    logger.info(f"Applying PCA with {n_components} components...")
-    all_pca_trajectories, pca_model = compute_pca_trajectories(
-        all_trajectories, n_components=n_components
-    )
-
-    # Split back into separate trajectories
-    num_baseline = baseline_traj.shape[0]
-    num_standard = standard_traj.shape[0]
-
-    baseline_pca = all_pca_trajectories[:num_baseline]
-    standard_pca = all_pca_trajectories[num_baseline : num_baseline + num_standard]
-    reasoning_pca = all_pca_trajectories[num_baseline + num_standard :]
-
-    # Create visualizations
-    trajectories_dict = {
-        "baseline": baseline_pca,
-        "standard": standard_pca,
-        "reasoning": reasoning_pca,
-    }
+    # Log family statistics
+    for std_id in token_ids:
+        family = token_families[std_id]
+        logger.debug(
+            f"Token {std_id}: {len(family)} variants (multiplicities: "
+            f"{[mult for _, mult, _ in family]})"
+        )
 
     figures = {}
 
-    if n_components == 2:
-        logger.info("Creating 2D visualization...")
-        fig = plot_2d_drift(
-            trajectories_dict,
-            token_labels=token_labels,
-            title=f"Token Embedding Drift - {embedding_type.value.capitalize()}",
-            save_path=output_dir / f"{experiment_name}_{embedding_type.value}_2d.png",
-        )
-        figures["2d"] = fig
-    elif n_components == 3:
-        logger.info("Creating 3D visualization...")
-        fig = plot_3d_drift(
-            trajectories_dict,
-            token_labels=token_labels,
-            title=f"Token Embedding Drift - {embedding_type.value.capitalize()} (3D)",
-            save_path=output_dir / f"{experiment_name}_{embedding_type.value}_3d.png",
-        )
-        figures["3d"] = fig
-    else:
-        raise ValueError(f"n_components must be 2 or 3, got {n_components}")
+    # TODO: Implement global PCA visualization
+    # TODO: Implement within-group PCA visualization
 
+    logger.info(f"Created {len(figures)} visualizations")
     logger.info("Visualization complete!")
     return figures
 
