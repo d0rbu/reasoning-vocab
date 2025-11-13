@@ -138,6 +138,7 @@ class TestLoadCheckpointEmbeddings:
         """Test loading standard input embeddings."""
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
+        create_reasoning_token_map(checkpoint_path, [])
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -145,7 +146,11 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type=EmbeddingType.INPUT
+                checkpoint_path,
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=[],
+                embedding_type=EmbeddingType.INPUT,
             )
 
             assert embeddings.shape == (3, 128)
@@ -155,6 +160,7 @@ class TestLoadCheckpointEmbeddings:
         """Test loading standard output embeddings."""
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
+        create_reasoning_token_map(checkpoint_path, [])
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -162,7 +168,11 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type=EmbeddingType.OUTPUT
+                checkpoint_path,
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=[],
+                embedding_type=EmbeddingType.OUTPUT,
             )
 
             assert embeddings.shape == (3, 128)
@@ -172,6 +182,7 @@ class TestLoadCheckpointEmbeddings:
         """Test loading reasoning vocabulary embeddings."""
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
+        create_reasoning_token_map(checkpoint_path, list(range(50)))
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -179,7 +190,11 @@ class TestLoadCheckpointEmbeddings:
         ):
             token_ids = [0, 1, 2]
             embeddings = load_checkpoint_embeddings(
-                checkpoint_path, token_ids, embedding_type=EmbeddingType.INPUT
+                checkpoint_path,
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=list(range(50)),
+                embedding_type=EmbeddingType.INPUT,
             )
 
             assert embeddings.shape == (3, 128)
@@ -190,7 +205,13 @@ class TestLoadCheckpointEmbeddings:
         checkpoint_path = tmp_path / "nonexistent"
 
         with pytest.raises(FileNotFoundError, match="Checkpoint not found"):
-            load_checkpoint_embeddings(checkpoint_path, [0, 1], embedding_type=EmbeddingType.INPUT)
+            load_checkpoint_embeddings(
+                checkpoint_path,
+                [0, 1],
+                vocab_size=100,
+                reasoning_std_ids=[],
+                embedding_type=EmbeddingType.INPUT,
+            )
 
 
 class TestCollectEmbeddingTrajectories:
@@ -200,6 +221,7 @@ class TestCollectEmbeddingTrajectories:
         """Test collecting trajectories from a single checkpoint."""
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
+        create_reasoning_token_map(checkpoint_path, [])
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -207,7 +229,11 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                [checkpoint_path], token_ids, embedding_type=EmbeddingType.INPUT
+                [checkpoint_path],
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=[],
+                embedding_type=EmbeddingType.INPUT,
             )
 
             assert trajectories.shape == (1, 3, 128)
@@ -220,6 +246,7 @@ class TestCollectEmbeddingTrajectories:
         for i in range(3):
             ckpt = tmp_path / f"checkpoint_{i}"
             ckpt.mkdir()
+            create_reasoning_token_map(ckpt, [])
             checkpoints.append(ckpt)
 
         with patch(
@@ -228,7 +255,11 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                checkpoints, token_ids, embedding_type=EmbeddingType.INPUT
+                checkpoints,
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=[],
+                embedding_type=EmbeddingType.INPUT,
             )
 
             assert trajectories.shape == (3, 3, 128)
@@ -238,6 +269,7 @@ class TestCollectEmbeddingTrajectories:
         """Test collecting reasoning vocabulary trajectories."""
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
+        create_reasoning_token_map(checkpoint_path, list(range(50)))
 
         with patch(
             "viz.visualize_token_drift.AutoModelForCausalLM.from_pretrained",
@@ -245,7 +277,11 @@ class TestCollectEmbeddingTrajectories:
         ):
             token_ids = [0, 1, 2]
             trajectories = collect_embedding_trajectories(
-                [checkpoint_path], token_ids, embedding_type=EmbeddingType.INPUT
+                [checkpoint_path],
+                token_ids,
+                vocab_size=100,
+                reasoning_std_ids=list(range(50)),
+                embedding_type=EmbeddingType.INPUT,
             )
 
             assert trajectories.shape == (1, 3, 128)
