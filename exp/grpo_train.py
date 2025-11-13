@@ -152,7 +152,9 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
     logger.info(f"Loading dataset: {cfg.dataset.name}")
 
     # Load dataset - cast to Dataset type since we know we're loading a specific split
-    dataset_raw = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
+    dataset_raw = load_dataset(
+        cfg.dataset.name, split=cfg.dataset.train_split, streaming=cfg.dataset.streaming
+    )
     dataset = cast(Dataset, dataset_raw)
 
     # Subsample if requested
