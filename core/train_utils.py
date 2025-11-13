@@ -7,16 +7,16 @@ This module contains:
 """
 
 import json
-from collections.abc import Callable
 from pathlib import Path
-from typing import cast
 
 from loguru import logger
-from transformers import PreTrainedModel, TrainerCallback, TrainerControl, TrainerState
+from transformers import TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
+from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
 
-def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> None:
+
+def save_reasoning_token_map(checkpoint_path: Path, model: Qwen3ReasoningVocabForCausalLM) -> None:
     """
     Save reasoning token map alongside model checkpoint.
 
@@ -40,20 +40,17 @@ def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> N
     """
     map_path = checkpoint_path / "reasoning_token_map.json"
 
-    # Assert that model has get_reasoning_token_ids method
-    assert hasattr(
-        model, "get_reasoning_token_ids"
-    ), "Model must have get_reasoning_token_ids() method"
-
-    # Get reasoning token IDs (will be empty tuple for baseline models)
-    get_ids = cast(Callable[[], tuple[int, ...]], model.get_reasoning_token_ids)
-    standard_token_ids = list(get_ids())
+    # Get reasoning token IDs from model (will be empty tuple for baseline models)
+    # These are the standard token IDs that were used to initialize each reasoning token
+    reasoning_token_ids = list(model.get_reasoning_token_ids())
 
     # Compute multiplicities by counting occurrences of each token
+    # This matches the logic in ReasoningTokenizer._build_reasoning_mapping()
+    # but outputs 1-indexed multiplicities (1, 2, 3...) instead of 0-indexed (0, 1, 2...)
     multiplicities = []
     token_counts: dict[int, int] = {}
 
-    for token_id in standard_token_ids:
+    for token_id in reasoning_token_ids:
         # Get current count for this token (0 if first occurrence)
         count = token_counts.get(token_id, 0)
         # Multiplicity is count + 1 (first occurrence has multiplicity 1)
@@ -62,7 +59,9 @@ def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> N
         token_counts[token_id] = count + 1
 
     # Save the map
-    data = {"standard_token_ids": standard_token_ids, "multiplicities": multiplicities}
+    # standard_token_ids: which standard token initialized each reasoning token
+    # multiplicities: which occurrence of that standard token (1st, 2nd, 3rd, etc.)
+    data = {"standard_token_ids": reasoning_token_ids, "multiplicities": multiplicities}
 
     # Ensure checkpoint directory exists
     checkpoint_path.mkdir(parents=True, exist_ok=True)
@@ -71,9 +70,9 @@ def save_reasoning_token_map(checkpoint_path: Path, model: PreTrainedModel) -> N
     with open(map_path, "w") as f:
         json.dump(data, f, indent=2)
 
-    if standard_token_ids:
+    if reasoning_token_ids:
         logger.debug(
-            f"Saved reasoning token map with {len(standard_token_ids)} reasoning tokens at {map_path}"
+            f"Saved reasoning token map with {len(reasoning_token_ids)} reasoning tokens at {map_path}"
         )
     else:
         logger.debug(f"Saved empty reasoning token map for baseline model at {map_path}")
@@ -101,7 +100,7 @@ class ReasoningTokenMapCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
-        model: PreTrainedModel | None = None,
+        model: Qwen3ReasoningVocabForCausalLM | None = None,
         **kwargs,
     ) -> TrainerControl:
         """
