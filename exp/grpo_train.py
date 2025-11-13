@@ -28,6 +28,9 @@ from transformers import (
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
+from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.train_utils import save_reasoning_token_map
+
 
 def setup_wandb(cfg: DictConfig) -> None:
     """
@@ -257,12 +260,12 @@ def main(cfg: DictConfig):
     trainer.save_model(str(checkpoint_0_path))
 
     # Save reasoning token map for checkpoint-0
-    from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
-    from core.train_utils import save_reasoning_token_map
-
-    if isinstance(model, Qwen3ReasoningVocabForCausalLM):
-        save_reasoning_token_map(checkpoint_0_path, model)
-        logger.info("Saved reasoning token map for checkpoint-0")
+    # Model must be Qwen3ReasoningVocabForCausalLM for this training pipeline
+    assert isinstance(model, Qwen3ReasoningVocabForCausalLM), (
+        f"Model must be Qwen3ReasoningVocabForCausalLM, got {type(model)}"
+    )
+    save_reasoning_token_map(checkpoint_0_path, model)
+    logger.info("Saved reasoning token map for checkpoint-0")
 
     # Train
     logger.info("=" * 80)
