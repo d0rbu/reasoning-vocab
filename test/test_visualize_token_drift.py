@@ -148,8 +148,6 @@ class TestLoadCheckpointEmbeddings:
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -170,8 +168,6 @@ class TestLoadCheckpointEmbeddings:
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.OUTPUT,
             )
 
@@ -192,8 +188,6 @@ class TestLoadCheckpointEmbeddings:
             embeddings = load_checkpoint_embeddings(
                 checkpoint_path,
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=list(range(50)),
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -208,8 +202,6 @@ class TestLoadCheckpointEmbeddings:
             load_checkpoint_embeddings(
                 checkpoint_path,
                 [0, 1],
-                vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -231,8 +223,6 @@ class TestCollectEmbeddingTrajectories:
             trajectories = collect_embedding_trajectories(
                 [checkpoint_path],
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -257,8 +247,6 @@ class TestCollectEmbeddingTrajectories:
             trajectories = collect_embedding_trajectories(
                 checkpoints,
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=[],
                 embedding_type=EmbeddingType.INPUT,
             )
 
@@ -279,8 +267,6 @@ class TestCollectEmbeddingTrajectories:
             trajectories = collect_embedding_trajectories(
                 [checkpoint_path],
                 token_ids,
-                vocab_size=100,
-                reasoning_std_ids=list(range(50)),
                 embedding_type=EmbeddingType.INPUT,
             )
 
