@@ -123,14 +123,21 @@ def expand_token_ids_with_reasoning(
 def load_checkpoint_embeddings(
     checkpoint_path: Path,
     token_ids: list[int],
+    vocab_size: int,
+    reasoning_std_ids: list[int],
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
 ) -> th.Tensor:
     """
     Load embeddings for specific tokens from a model checkpoint.
 
+    For reasoning tokens (>= vocab_size), loads the embedding from the source
+    standard token that was used to initialize that reasoning token.
+
     Args:
         checkpoint_path: Path to model checkpoint directory
-        token_ids: List of token IDs to extract embeddings for
+        token_ids: List of token IDs to extract embeddings for (may include reasoning tokens)
+        vocab_size: Size of standard vocabulary
+        reasoning_std_ids: Standard token IDs used to initialize reasoning tokens
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
@@ -143,6 +150,26 @@ def load_checkpoint_embeddings(
         raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
 
     logger.debug(f"Loading {embedding_type.value} embeddings from {checkpoint_path}")
+
+    # Translate reasoning token IDs to actual embedding indices
+    # For standard tokens (< vocab_size): use as-is
+    # For reasoning tokens (>= vocab_size): map to source standard token from the reasoning map
+    actual_indices = []
+    for token_id in token_ids:
+        if token_id < vocab_size:
+            # Standard token - use directly
+            actual_indices.append(token_id)
+        else:
+            # Reasoning token - map to source standard token using the provided reasoning map
+            reasoning_idx = token_id - vocab_size
+
+            if reasoning_idx >= len(reasoning_std_ids):
+                raise ValueError(
+                    f"Reasoning token {token_id} (index {reasoning_idx}) is out of bounds. "
+                    f"Reasoning map has {len(reasoning_std_ids)} tokens."
+                )
+            source_token_id = reasoning_std_ids[reasoning_idx]
+            actual_indices.append(source_token_id)
 
     # Load model checkpoint
     model = AutoModelForCausalLM.from_pretrained(
@@ -157,7 +184,7 @@ def load_checkpoint_embeddings(
     else:
         embed_layer = cast(nn.Linear, model.get_output_embeddings())
 
-    embeddings = cast(th.Tensor, embed_layer.weight.data[token_ids])
+    embeddings = cast(th.Tensor, embed_layer.weight.data[actual_indices])
 
     logger.debug(f"Loaded embeddings with shape: {embeddings.shape}")
     return embeddings
@@ -166,6 +193,8 @@ def load_checkpoint_embeddings(
 def collect_embedding_trajectories(
     checkpoint_dirs: list[Path],
     token_ids: list[int],
+    vocab_size: int,
+    reasoning_std_ids: list[int],
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
 ) -> np.ndarray:
     """
@@ -174,6 +203,8 @@ def collect_embedding_trajectories(
     Args:
         checkpoint_dirs: List of checkpoint directories in chronological order
         token_ids: List of token IDs to track
+        vocab_size: Size of standard vocabulary
+        reasoning_std_ids: Standard token IDs used to initialize reasoning tokens
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
@@ -181,7 +212,9 @@ def collect_embedding_trajectories(
     """
     return np.array(
         [
-            load_checkpoint_embeddings(ckpt_dir, token_ids, embedding_type).numpy()
+            load_checkpoint_embeddings(
+                ckpt_dir, token_ids, vocab_size, reasoning_std_ids, embedding_type
+            ).numpy()
             for ckpt_dir in checkpoint_dirs
         ]
     )
@@ -533,7 +566,7 @@ def visualize_token_drift(
     all_checkpoints = [baseline_checkpoint] + reasoning_checkpoints
     logger.info(f"Collecting embeddings from {len(all_checkpoints)} checkpoints...")
     all_trajectories = collect_embedding_trajectories(
-        all_checkpoints, all_token_ids, embedding_type
+        all_checkpoints, all_token_ids, vocab_size, reasoning_std_ids, embedding_type
     )
     # Shape: (num_checkpoints, num_tokens, hidden_size)
 
