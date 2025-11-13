@@ -125,14 +125,13 @@ def load_checkpoint_embeddings(
     """
     Load embeddings for specific tokens from a model checkpoint.
 
-    For reasoning tokens (>= vocab_size), loads the embedding from the source
-    standard token that was used to initialize that reasoning token.
+    This function supports loading both standard and reasoning tokens from
+    checkpoints with extended vocabulary (via resize_token_embeddings).
 
     Args:
         checkpoint_path: Path to model checkpoint directory
         token_ids: Tensor of token IDs to extract embeddings for (may include reasoning tokens)
-        vocab_size: Size of standard vocabulary
-        reasoning_standard_token_ids: Tensor of standard token IDs used to initialize reasoning tokens
+        vocab_size: Size of standard vocabulary (reasoning tokens have IDs >= vocab_size)
         embedding_type: Whether to load input embeddings or output unembeddings
 
     Returns:
@@ -161,11 +160,18 @@ def load_checkpoint_embeddings(
 
     all_embeddings = embed_layer.weight.data
 
-    assert all_embeddings.shape[0] == vocab_size
+    # Validate the embedding layer has at least vocab_size embeddings
+    # (it may have more if reasoning vocabulary is present)
+    assert all_embeddings.shape[0] >= vocab_size, (
+        f"Embedding layer has {all_embeddings.shape[0]} embeddings, but vocab_size is {vocab_size}"
+    )
+
     assert token_ids.dim() == 1
     assert token_ids.dtype == th.long
     assert token_ids.min() >= 0
-    assert token_ids.max() < vocab_size
+    assert token_ids.max() < all_embeddings.shape[0], (
+        f"Token ID {token_ids.max()} exceeds embedding layer size {all_embeddings.shape[0]}"
+    )
 
     embeddings = all_embeddings[token_ids]
 
@@ -471,8 +477,7 @@ def group_trajectories_by_token_family(
 
 
 def visualize_token_drift(
-    baseline_checkpoint: Path,
-    reasoning_checkpoints: list[Path],
+    checkpoints: list[Path],
     token_ids_raw: list[int],
     token_labels: list[str] | None = None,
     embedding_type: EmbeddingType = EmbeddingType.INPUT,
@@ -484,21 +489,20 @@ def visualize_token_drift(
     Visualize token embedding drift across training.
 
     This function tracks token embeddings and their reasoning variants across training,
-    showing how they evolve from the baseline through training checkpoints.
+    showing how they evolve from initialization (checkpoint-0) through training.
 
     For each standard token, the visualization includes:
     - The standard token itself (multiplicity 0)
     - All reasoning variants initialized from that token (multiplicity 1, 2, 3, ...)
 
-    Two types of PCA visualizations are created:
-    1. Global PCA: All tokens projected into a shared PCA space
-    2. Within-group PCA: Each token family in its own PCA space
+    The first checkpoint should be the initialized model (checkpoint-0) which has the
+    reasoning vocabulary but hasn't been trained yet.
 
     Args:
-        baseline_checkpoint: Path to baseline (pretrained) model checkpoint
-        reasoning_checkpoints: List of checkpoint paths from reasoning vocab training
-        token_ids: List of standard token IDs to track (these should be the standard
-                  token IDs that were used to initialize reasoning tokens)
+        checkpoints: List of checkpoint paths in chronological order, starting with
+                    checkpoint-0 (initialized model before training)
+        token_ids_raw: List of standard token IDs to track (these should be the standard
+                      token IDs that were used to initialize reasoning tokens)
         token_labels: Optional string labels for each standard token
         embedding_type: Whether to visualize input embeddings or output unembeddings
         n_components: Number of PCA components (2 or 3)
@@ -510,19 +514,18 @@ def visualize_token_drift(
     """
     logger.info(f"Visualizing token drift for {len(token_ids_raw)} standard tokens")
     logger.trace(f"Token IDs: {token_ids_raw}")
-    logger.debug(f"Baseline: {baseline_checkpoint}")
-    logger.debug(f"Number of reasoning checkpoints: {len(reasoning_checkpoints)}")
-    logger.trace(f"Reasoning checkpoints: {reasoning_checkpoints}")
+    logger.debug(f"Number of checkpoints: {len(checkpoints)}")
+    logger.trace(f"Checkpoints: {checkpoints}")
 
-    # Load reasoning token map from first reasoning checkpoint
+    # Load reasoning token map from first checkpoint
     logger.debug("Loading reasoning token map...")
     reasoning_standard_token_ids, reasoning_multiplicities = load_reasoning_token_map(
-        reasoning_checkpoints[0]
+        checkpoints[0]
     )
     token_ids = th.tensor(token_ids_raw, dtype=th.long)
 
     # Get vocab_size from config (required)
-    config_path = reasoning_checkpoints[0] / "config.json"
+    config_path = checkpoints[0] / "config.json"
     if not config_path.exists():
         raise FileNotFoundError(
             f"config.json not found at {config_path}. All checkpoints must have a config.json file."
@@ -540,10 +543,9 @@ def visualize_token_drift(
     logger.debug(f"Tracking {len(all_token_ids)} total tokens (including reasoning variants)")
 
     # Collect all trajectories in one pass
-    all_checkpoints = [baseline_checkpoint] + reasoning_checkpoints
-    logger.debug(f"Collecting embeddings from {len(all_checkpoints)} checkpoints...")
+    logger.debug(f"Collecting embeddings from {len(checkpoints)} checkpoints...")
     all_trajectories = collect_embedding_trajectories(
-        all_checkpoints, all_token_ids, vocab_size, embedding_type
+        checkpoints, all_token_ids, vocab_size, embedding_type
     )
     # Shape: (num_checkpoints, num_tokens, hidden_size)
 
@@ -574,17 +576,11 @@ def main():
     """Command-line interface for token drift visualization."""
     parser = argparse.ArgumentParser(description="Visualize token embedding drift during training")
     parser.add_argument(
-        "--baseline",
-        type=Path,
-        required=True,
-        help="Path to baseline model checkpoint",
-    )
-    parser.add_argument(
         "--checkpoints",
         type=Path,
         nargs="+",
         required=True,
-        help="Paths to reasoning vocab training checkpoints (in chronological order)",
+        help="Paths to checkpoints in chronological order (starting with checkpoint-0)",
     )
     parser.add_argument(
         "--token-ids",
@@ -637,9 +633,8 @@ def main():
 
     # Run visualization
     visualize_token_drift(
-        baseline_checkpoint=args.baseline,
-        reasoning_checkpoints=args.checkpoints,
-        token_ids=args.token_ids,
+        checkpoints=args.checkpoints,
+        token_ids_raw=args.token_ids,
         token_labels=args.token_labels,
         embedding_type=embedding_type,
         n_components=args.n_components,

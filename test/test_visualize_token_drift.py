@@ -78,34 +78,30 @@ def mock_model_with_embeddings():
 
 @pytest.fixture
 def mock_model_with_reasoning_vocab():
-    """Create a mock model with reasoning vocabulary layers."""
+    """Create a mock model with reasoning vocabulary layers.
+
+    This mock simulates a model with resize_token_embeddings() called,
+    where the embedding layers contain vocab_size + reasoning_vocab_size tokens.
+    """
     model = Mock()
 
     # Create embedding layers
     hidden_size = 128
     vocab_size = 100
     reasoning_vocab_size = 50
+    total_vocab_size = vocab_size + reasoning_vocab_size  # 150
 
-    # Standard embeddings
+    # Extended embeddings (standard + reasoning tokens in same layer)
     input_embed = Mock()
     input_embed.weight = Mock()
-    input_embed.weight.data = th.randn(vocab_size, hidden_size)
+    input_embed.weight.data = th.randn(total_vocab_size, hidden_size)
 
     output_embed = Mock()
     output_embed.weight = Mock()
-    output_embed.weight.data = th.randn(vocab_size, hidden_size)
+    output_embed.weight.data = th.randn(total_vocab_size, hidden_size)
 
     model.get_input_embeddings = Mock(return_value=input_embed)
     model.get_output_embeddings = Mock(return_value=output_embed)
-
-    # Reasoning embeddings
-    model.reasoning_embed = Mock()
-    model.reasoning_embed.weight = Mock()
-    model.reasoning_embed.weight.data = th.randn(reasoning_vocab_size, hidden_size)
-
-    model.reasoning_unembed = Mock()
-    model.reasoning_unembed.weight = Mock()
-    model.reasoning_unembed.weight.data = th.randn(reasoning_vocab_size, hidden_size)
 
     return model
 
@@ -421,13 +417,9 @@ class TestVisualizeTokenDrift:
     def test_visualize_2d(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test end-to-end 2D visualization."""
         # Create checkpoint directories
-        baseline = tmp_path / "baseline"
-        baseline.mkdir()
-        create_reasoning_token_map(baseline, [])
-
         checkpoints = []
-        for i in range(3):
-            ckpt = tmp_path / f"checkpoint_{i}"
+        for i in range(4):  # checkpoint-0, checkpoint-1, checkpoint-2, checkpoint-3
+            ckpt = tmp_path / f"checkpoint-{i}"
             ckpt.mkdir()
             create_reasoning_token_map(ckpt, list(range(50)))  # 50 reasoning tokens
             checkpoints.append(ckpt)
@@ -439,8 +431,7 @@ class TestVisualizeTokenDrift:
             return_value=mock_model_with_reasoning_vocab,
         ):
             figures = visualize_token_drift(
-                baseline_checkpoint=baseline,
-                reasoning_checkpoints=checkpoints,
+                checkpoints=checkpoints,
                 token_ids_raw=[0, 1, 2],
                 token_labels=["a", "b", "c"],
                 embedding_type=EmbeddingType.INPUT,
@@ -458,13 +449,9 @@ class TestVisualizeTokenDrift:
 
     def test_visualize_3d(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test end-to-end 3D visualization."""
-        baseline = tmp_path / "baseline"
-        baseline.mkdir()
-        create_reasoning_token_map(baseline, [])
-
         checkpoints = []
-        for i in range(3):
-            ckpt = tmp_path / f"checkpoint_{i}"
+        for i in range(4):  # checkpoint-0, checkpoint-1, checkpoint-2, checkpoint-3
+            ckpt = tmp_path / f"checkpoint-{i}"
             ckpt.mkdir()
             create_reasoning_token_map(ckpt, list(range(50)))  # 50 reasoning tokens
             checkpoints.append(ckpt)
@@ -476,8 +463,7 @@ class TestVisualizeTokenDrift:
             return_value=mock_model_with_reasoning_vocab,
         ):
             figures = visualize_token_drift(
-                baseline_checkpoint=baseline,
-                reasoning_checkpoints=checkpoints,
+                checkpoints=checkpoints,
                 token_ids_raw=[0, 1, 2],
                 embedding_type=EmbeddingType.OUTPUT,
                 n_components=3,
@@ -494,11 +480,7 @@ class TestVisualizeTokenDrift:
 
     def test_visualize_invalid_components(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test error handling for invalid number of components."""
-        baseline = tmp_path / "baseline"
-        baseline.mkdir()
-        create_reasoning_token_map(baseline, [])
-
-        checkpoints = [tmp_path / "checkpoint"]
+        checkpoints = [tmp_path / "checkpoint-0"]
         checkpoints[0].mkdir()
         create_reasoning_token_map(checkpoints[0], list(range(50)))
 
@@ -508,21 +490,17 @@ class TestVisualizeTokenDrift:
         ):
             with pytest.raises(ValueError, match="n_components must be 2 or 3"):
                 visualize_token_drift(
-                    baseline_checkpoint=baseline,
-                    reasoning_checkpoints=checkpoints,
+                    checkpoints=checkpoints,
                     token_ids_raw=[0, 1],
                     n_components=4,  # Invalid
                 )
 
     def test_visualize_output_embeddings(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test visualization of output embeddings."""
-        baseline = tmp_path / "baseline"
-        baseline.mkdir()
-        create_reasoning_token_map(baseline, [])
-
-        checkpoints = [tmp_path / "checkpoint"]
-        checkpoints[0].mkdir()
-        create_reasoning_token_map(checkpoints[0], list(range(50)))
+        checkpoints = [tmp_path / "checkpoint-0", tmp_path / "checkpoint-1"]
+        for ckpt in checkpoints:
+            ckpt.mkdir()
+            create_reasoning_token_map(ckpt, list(range(50)))
 
         output_dir = tmp_path / "figures"
 
@@ -531,8 +509,7 @@ class TestVisualizeTokenDrift:
             return_value=mock_model_with_reasoning_vocab,
         ):
             figures = visualize_token_drift(
-                baseline_checkpoint=baseline,
-                reasoning_checkpoints=checkpoints,
+                checkpoints=checkpoints,
                 token_ids_raw=[0, 1],
                 embedding_type=EmbeddingType.OUTPUT,
                 n_components=2,
@@ -549,14 +526,10 @@ class TestIntegration:
 
     def test_multiple_tokens_multiple_checkpoints(self, tmp_path, mock_model_with_reasoning_vocab):
         """Test with multiple tokens tracked across multiple checkpoints."""
-        baseline = tmp_path / "baseline"
-        baseline.mkdir()
-        create_reasoning_token_map(baseline, [])
-
-        num_checkpoints = 5
+        num_checkpoints = 6  # checkpoint-0 through checkpoint-5
         checkpoints = []
         for i in range(num_checkpoints):
-            ckpt = tmp_path / f"checkpoint_{i}"
+            ckpt = tmp_path / f"checkpoint-{i}"
             ckpt.mkdir()
             create_reasoning_token_map(ckpt, list(range(50)))
             checkpoints.append(ckpt)
@@ -571,8 +544,7 @@ class TestIntegration:
             return_value=mock_model_with_reasoning_vocab,
         ):
             figures = visualize_token_drift(
-                baseline_checkpoint=baseline,
-                reasoning_checkpoints=checkpoints,
+                checkpoints=checkpoints,
                 token_ids_raw=token_ids,
                 token_labels=token_labels,
                 embedding_type=EmbeddingType.INPUT,

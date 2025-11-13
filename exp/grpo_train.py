@@ -249,6 +249,21 @@ def main(cfg: DictConfig):
         reward_funcs=[accuracy_reward, think_format_reward],  # Multiple TRL rewards
     )
 
+    # Save initial checkpoint (checkpoint-0) before training
+    # This serves as the baseline for visualization, showing the initialized model
+    # with reasoning vocabulary but no training
+    checkpoint_0_path = Path(cfg.output_dir) / "checkpoint-0"
+    logger.info(f"Saving initial checkpoint to {checkpoint_0_path}")
+    trainer.save_model(str(checkpoint_0_path))
+
+    # Save reasoning token map for checkpoint-0
+    from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+    from core.train_utils import save_reasoning_token_map
+
+    if isinstance(model, Qwen3ReasoningVocabForCausalLM):
+        save_reasoning_token_map(checkpoint_0_path, model)
+        logger.info("Saved reasoning token map for checkpoint-0")
+
     # Train
     logger.info("=" * 80)
     logger.info("Starting training...")
