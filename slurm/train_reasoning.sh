@@ -7,8 +7,8 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --output=out/reasoning-%j.out
-#SBATCH --error=out/reasoning-%j.err
+#SBATCH --output=reasoning-%j
+#SBATCH --error=reasoning-%j.err
 #SBATCH --gres=gpu:h100:1
 #SBATCH --partition=gpu
 
