@@ -16,7 +16,7 @@ from typing import Any, cast
 import hydra
 import torch as th
 import wandb
-from datasets import Dataset, load_dataset
+from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
@@ -30,6 +30,10 @@ from trl.rewards import accuracy_reward, think_format_reward
 
 from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
 from core.train_utils import save_reasoning_token_map
+
+DatasetType = Dataset | IterableDataset | DatasetDict | IterableDatasetDict
+ListDatasetType = Dataset | IterableDataset
+SizedDatasetType = Dataset | DatasetDict
 
 
 def setup_wandb(cfg: DictConfig) -> None:
@@ -114,7 +118,7 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     return model, tokenizer
 
 
-def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Dataset:
+def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> DatasetType:
     """
     Preprocess dataset into conversational format using chat template.
 
@@ -138,10 +142,13 @@ def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Data
 
         return {"prompt": str(prompt), "answer": str(example["answer"])}
 
-    return dataset.map(format_example, desc="Formatting dataset with chat template")
+    if isinstance(dataset, IterableDataset | IterableDatasetDict):
+        return dataset.map(format_example)
+    else:
+        return dataset.map(format_example, desc="Formatting dataset with chat template")
 
 
-def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> Dataset:
+def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> DatasetType:
     """
     Load and preprocess dataset.
 
@@ -155,23 +162,25 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
     logger.info(f"Loading dataset: {cfg.dataset.name}")
 
     # Load dataset - cast to Dataset type since we know we're loading a specific split
-    dataset_raw = load_dataset(
+    dataset = load_dataset(
         cfg.dataset.name, split=cfg.dataset.train_split, streaming=cfg.dataset.streaming
     )
-    dataset = cast(Dataset, dataset_raw)
 
     # Subsample if requested
     if cfg.dataset.max_train_samples is not None:
-        dataset = cast(
-            Dataset,
-            dataset.select(range(min(int(cfg.dataset.max_train_samples), len(dataset)))),
+        assert isinstance(dataset, ListDatasetType), (
+            f"Dataset must be a Dataset or IterableDataset object, got {type(dataset)}"
         )
-        logger.debug(f"Subsampled to {len(dataset)} examples")
+        dataset = dataset.take(int(cfg.dataset.max_train_samples))
+        logger.debug(f"Subsampled to {cfg.dataset.max_train_samples} examples")
 
     # Preprocess with chat template (no system prompt)
     dataset = preprocess_dataset(dataset, tokenizer)
 
-    logger.debug(f"Dataset prepared with {len(dataset)} examples")
+    if isinstance(dataset, SizedDatasetType):
+        logger.debug(f"Dataset prepared with {len(dataset)} examples")
+    else:
+        logger.debug("Streaming dataset prepared")
 
     return dataset
 
@@ -238,6 +247,9 @@ def main(cfg: DictConfig):
 
     # Load and prepare dataset
     train_dataset = load_and_prepare_dataset(cfg, tokenizer)
+    assert isinstance(train_dataset, ListDatasetType), (
+        f"Train dataset must be a Dataset or IterableDataset object, got {type(train_dataset)}"
+    )
 
     # Create GRPO config
     training_args = create_grpo_config(cfg)
