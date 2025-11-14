@@ -135,7 +135,13 @@ def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Data
 
         return {"prompt": str(prompt), "answer": str(example["answer"])}
 
-    return dataset.map(format_example, desc="Formatting dataset with chat template")
+    # Note: IterableDataset.map() doesn't support 'desc' parameter
+    # Only add desc for regular Dataset types
+    try:
+        return dataset.map(format_example, desc="Formatting dataset with chat template")
+    except TypeError:
+        # Fallback for IterableDataset which doesn't support desc parameter
+        return dataset.map(format_example)
 
 
 def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> Dataset:
@@ -151,8 +157,9 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
     """
     logger.info(f"Loading dataset: {cfg.dataset.name}")
 
-    # Load dataset - cast to Dataset type since we know we're loading a specific split
-    dataset_raw = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
+    # Load dataset - explicitly disable streaming to ensure we get a Dataset, not IterableDataset
+    # IterableDataset doesn't support operations like select() and len()
+    dataset_raw = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split, streaming=False)
     dataset = cast(Dataset, dataset_raw)
 
     # Subsample if requested
