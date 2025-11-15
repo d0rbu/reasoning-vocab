@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
-import datasets.utils.py_utils
+import datasets.builder
 import hydra
 import torch as th
 import wandb
@@ -168,7 +168,7 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
             "Ignoring sufficient disk space check. Please make sure you actually have enough disk space to load the dataset!"
         )
         # i dont like this solution either, but its to get around cluster nfs shenanigans
-        datasets.utils.py_utils.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
+        datasets.builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
 
     # Load dataset - cast to Dataset type since we know we're loading a specific split
     dataset = load_dataset(
