@@ -2,7 +2,7 @@
 
 # Dataset identifier from HuggingFace
 name: "agentica-org/DeepScaleR-Preview-Dataset"
-streaming: true
+streaming: false
 
 # Split configuration
 train_split: "train"
