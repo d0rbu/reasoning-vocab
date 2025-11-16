@@ -21,7 +21,7 @@ from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict,
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
-    AutoModelForCausalLM,
+    AutoConfig,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
@@ -30,6 +30,7 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
 from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.reasoning_vocab_utils import get_reasoning_token_ids
 from core.train_utils import save_reasoning_token_map
 
 DatasetType = Dataset | IterableDataset | DatasetDict | IterableDatasetDict
@@ -87,15 +88,46 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     }
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load model with kwargs from config (unpacking model_kwargs)
+    # Load config first
+    config = AutoConfig.from_pretrained(
+        cfg.model.name,
+        trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
+    )
+
+    # Prepare reasoning token IDs based on reasoning_vocab_size
+    reasoning_vocab_size = int(cfg.model.reasoning_vocab_size)
+    if reasoning_vocab_size > 0:
+        # Get reasoning token IDs (all standard tokens)
+        reasoning_token_ids = get_reasoning_token_ids(config.vocab_size)[:reasoning_vocab_size]
+        logger.info(f"Initializing model with reasoning vocab size: {reasoning_vocab_size}")
+    else:
+        # Baseline: no reasoning tokens
+        reasoning_token_ids = tuple()
+        logger.info("Initializing baseline model (no reasoning vocabulary)")
+
+    # Create model with reasoning vocabulary support
+    model = Qwen3ReasoningVocabForCausalLM(config, reasoning_token_ids=reasoning_token_ids)
+
+    # Load pretrained weights
     model_kwargs_raw = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
     model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
-    model_kwargs["torch_dtype"] = torch_dtype  # Override with mapped dtype
-
-    model = AutoModelForCausalLM.from_pretrained(
+    # Remove kwargs that shouldn't be passed to from_pretrained
+    model_kwargs.pop("torch_dtype", None)
+    
+    # Load state dict from pretrained model
+    from transformers import AutoModelForCausalLM
+    pretrained_model = AutoModelForCausalLM.from_pretrained(
         cfg.model.name,
+        torch_dtype=torch_dtype,
         **model_kwargs,
     )
+    
+    # Copy weights to our custom model (only standard vocab embeddings)
+    model.load_state_dict(pretrained_model.state_dict(), strict=False)
+    del pretrained_model  # Free memory
+    
+    # Move to correct dtype
+    model = model.to(torch_dtype)
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -115,6 +147,8 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     num_params = sum(p.numel() for p in model.parameters()) / 1e9
     logger.debug(f"Model loaded: {model.__class__.__name__}")
     logger.debug(f"Model size: {num_params:.2f}B parameters")
+    logger.debug(f"Reasoning vocab size: {model.reasoning_vocab_size}")
+    logger.debug(f"Standard vocab size: {model.standard_vocab_size}")
 
     return model, tokenizer
 
