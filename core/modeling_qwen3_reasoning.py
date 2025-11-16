@@ -8,9 +8,10 @@ This module contains the extended Qwen3ForCausalLM class with:
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import torch as th
-from transformers import Qwen3ForCausalLM
+from transformers import AutoConfig, AutoModelForCausalLM, Qwen3ForCausalLM
 from transformers.generation.logits_process import LogitsProcessor
 
 from core.tokenizer_utils import ReasoningTokenizer
@@ -156,3 +157,53 @@ class Qwen3ReasoningVocabForCausalLM(Qwen3ForCausalLM):
     def num_reasoning_tokens(self) -> int:
         """Get the number of reasoning tokens."""
         return self.reasoning_vocab_size
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str,
+        reasoning_token_ids: Sequence[int] = tuple(),
+        **kwargs: Any,
+    ) -> "Qwen3ReasoningVocabForCausalLM":
+        """
+        Load a pretrained model with reasoning vocabulary support.
+
+        This method loads a pretrained Qwen3 model and extends it with reasoning
+        vocabulary by:
+        1. Loading the config
+        2. Creating an instance with reasoning vocabulary
+        3. Loading pretrained weights (strict=False to handle new reasoning tokens)
+
+        Args:
+            pretrained_model_name_or_path: Model name or path
+            reasoning_token_ids: Sequence of token IDs to initialize reasoning vocab from
+            **kwargs: Additional arguments passed to from_pretrained
+
+        Returns:
+            Qwen3ReasoningVocabForCausalLM instance with pretrained weights
+        """
+        # Load config
+        config = AutoConfig.from_pretrained(
+            pretrained_model_name_or_path,
+            trust_remote_code=kwargs.get("trust_remote_code", False),
+        )
+
+        # Create model with reasoning vocabulary
+        model = cls(config, reasoning_token_ids=reasoning_token_ids)
+
+        # Load pretrained weights into the base model
+        pretrained_model = AutoModelForCausalLM.from_pretrained(
+            pretrained_model_name_or_path,
+            **kwargs,
+        )
+
+        # Copy weights (strict=False to allow new reasoning token embeddings)
+        model.load_state_dict(pretrained_model.state_dict(), strict=False)
+
+        # Move to same dtype as pretrained model
+        model_dtype = next(pretrained_model.parameters()).dtype
+        model = model.to(model_dtype)
+
+        del pretrained_model  # Free memory
+
+        return model

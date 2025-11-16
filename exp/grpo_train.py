@@ -21,7 +21,6 @@ from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict,
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
-    AutoConfig,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
@@ -88,46 +87,21 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     }
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load config first
-    config = AutoConfig.from_pretrained(
-        cfg.model.name,
-        trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
-    )
-
     # Prepare reasoning token IDs based on reasoning_vocab_size
     reasoning_vocab_size = int(cfg.model.reasoning_vocab_size)
-    if reasoning_vocab_size > 0:
-        # Get reasoning token IDs (all standard tokens)
-        reasoning_token_ids = get_reasoning_token_ids(config.vocab_size)[:reasoning_vocab_size]
-        logger.info(f"Initializing model with reasoning vocab size: {reasoning_vocab_size}")
-    else:
-        # Baseline: no reasoning tokens
-        reasoning_token_ids = tuple()
-        logger.info("Initializing baseline model (no reasoning vocabulary)")
+    reasoning_token_ids = get_reasoning_token_ids(reasoning_vocab_size)
+    logger.info(f"Initializing model with reasoning vocab size: {reasoning_vocab_size}")
 
-    # Create model with reasoning vocabulary support
-    model = Qwen3ReasoningVocabForCausalLM(config, reasoning_token_ids=reasoning_token_ids)
-
-    # Load pretrained weights
+    # Load model with pretrained weights and reasoning vocabulary
     model_kwargs_raw = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
     model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
-    # Remove kwargs that shouldn't be passed to from_pretrained
-    model_kwargs.pop("torch_dtype", None)
-    
-    # Load state dict from pretrained model
-    from transformers import AutoModelForCausalLM
-    pretrained_model = AutoModelForCausalLM.from_pretrained(
+    model_kwargs["torch_dtype"] = torch_dtype
+
+    model = Qwen3ReasoningVocabForCausalLM.from_pretrained(
         cfg.model.name,
-        torch_dtype=torch_dtype,
+        reasoning_token_ids=reasoning_token_ids,
         **model_kwargs,
     )
-    
-    # Copy weights to our custom model (only standard vocab embeddings)
-    model.load_state_dict(pretrained_model.state_dict(), strict=False)
-    del pretrained_model  # Free memory
-    
-    # Move to correct dtype
-    model = model.to(torch_dtype)
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
@@ -138,7 +112,9 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     # Set pad token if not set
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = tokenizer.eos_token_id
+    # Always ensure model config has pad_token_id
+    if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
 
     # Enable gradient checkpointing if specified
     if cfg.training.gradient_checkpointing:
