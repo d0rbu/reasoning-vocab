@@ -21,7 +21,6 @@ from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict,
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
-    AutoModelForCausalLM,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
@@ -30,6 +29,7 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
 from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.reasoning_vocab_utils import get_reasoning_token_ids
 from core.train_utils import save_reasoning_token_map
 
 DatasetType = Dataset | IterableDataset | DatasetDict | IterableDatasetDict
@@ -87,13 +87,19 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     }
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load model with kwargs from config (unpacking model_kwargs)
+    # Prepare reasoning token IDs based on reasoning_vocab_size
+    reasoning_vocab_size = int(cfg.model.reasoning_vocab_size)
+    reasoning_token_ids = get_reasoning_token_ids(reasoning_vocab_size)
+    logger.info(f"Initializing model with reasoning vocab size: {reasoning_vocab_size}")
+
+    # Load model with pretrained weights and reasoning vocabulary
     model_kwargs_raw = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
     model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
-    model_kwargs["torch_dtype"] = torch_dtype  # Override with mapped dtype
+    model_kwargs["torch_dtype"] = torch_dtype
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model = Qwen3ReasoningVocabForCausalLM.from_pretrained(
         cfg.model.name,
+        reasoning_token_ids=reasoning_token_ids,
         **model_kwargs,
     )
 
@@ -106,7 +112,10 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     # Set pad token if not set
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = tokenizer.eos_token_id
+
+    # Always ensure model config has pad_token_id
+    if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
 
     # Enable gradient checkpointing if specified
     if cfg.training.gradient_checkpointing:
@@ -115,6 +124,8 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     num_params = sum(p.numel() for p in model.parameters()) / 1e9
     logger.debug(f"Model loaded: {model.__class__.__name__}")
     logger.debug(f"Model size: {num_params:.2f}B parameters")
+    logger.debug(f"Reasoning vocab size: {model.reasoning_vocab_size}")
+    logger.debug(f"Standard vocab size: {model.standard_vocab_size}")
 
     return model, tokenizer
 
@@ -168,7 +179,7 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
             "Ignoring sufficient disk space check. Please make sure you actually have enough disk space to load the dataset!"
         )
         # i dont like this solution either, but its to get around cluster nfs shenanigans
-        datasets.builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True
+        datasets.builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True  # type: ignore
 
     # Load dataset - cast to Dataset type since we know we're loading a specific split
     dataset = load_dataset(

@@ -69,10 +69,11 @@ def minimal_hydra_config() -> DictConfig:
         "seed": 42,
         "output_dir": "/tmp/test_output",
         "model": {
-            "name": "hf-internal-testing/tiny-random-GPTNeoXForCausalLM",
+            "name": "tiny-random/qwen3",
+            "reasoning_vocab_size": 0,  # Baseline model for tests
             "model_kwargs": {
                 "torch_dtype": "fp32",
-                "trust_remote_code": False,
+                "trust_remote_code": True,
                 "device_map": "cpu",
             },
         },

@@ -194,7 +194,7 @@ class TestModelLoading:
         """Test that pad token is set if not present."""
         model, tokenizer = load_model_and_tokenizer(minimal_hydra_config)
 
-        # Pad token should be set to eos_token
+        # Pad token should be set (either by tokenizer or our code)
         assert tokenizer.pad_token is not None
         assert tokenizer.pad_token == tokenizer.eos_token
         assert model.config.pad_token_id == tokenizer.eos_token_id

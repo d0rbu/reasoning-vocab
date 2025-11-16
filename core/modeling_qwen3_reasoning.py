@@ -8,6 +8,7 @@ This module contains the extended Qwen3ForCausalLM class with:
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import torch as th
 from transformers import Qwen3ForCausalLM
@@ -99,49 +100,65 @@ class Qwen3ReasoningVocabForCausalLM(Qwen3ForCausalLM):
         config,
         reasoning_token_ids: Sequence[int] = tuple(),
     ):
-        # Store the original vocab size before any modifications
-        original_vocab_size = config.vocab_size
-
         super().__init__(config)
 
-        # Store original vocab size as an attribute (do this after super().__init__)
-        self.standard_vocab_size: int = original_vocab_size
+        self._init_reasoning_vocab(config.vocab_size, reasoning_token_ids)
 
-        # Convert reasoning_token_ids to tensor and store
-        self.reasoning_token_ids = th.tensor(reasoning_token_ids, dtype=th.long)
-        reasoning_vocab_size: int = len(reasoning_token_ids)
-        self.reasoning_vocab_size: int = reasoning_vocab_size
-
-        # Extend embeddings if reasoning tokens are provided
-        if self.reasoning_vocab_size > 0:
-            new_vocab_size = self.standard_vocab_size + self.reasoning_vocab_size
-            self.resize_token_embeddings(new_vocab_size)
-
-            # Initialize reasoning embeddings from specified standard tokens
-            self._initialize_reasoning_vocab()
-
-    def _initialize_reasoning_vocab(self):
+    def _init_reasoning_vocab(self, original_vocab_size: int, reasoning_token_ids: Sequence[int] = tuple()) -> None:
         """
         Initialize reasoning vocabulary embeddings from standard vocabulary.
 
         Uses efficient tensor indexing to copy embeddings from the specified
         standard tokens to the new reasoning token positions.
         """
+        self.standard_vocab_size: int = original_vocab_size
+
+        self.reasoning_token_ids: th.Tensor = th.tensor(reasoning_token_ids, dtype=th.long)
+        self.reasoning_vocab_size: int = len(reasoning_token_ids)
+
         if self.reasoning_vocab_size == 0:
             return
 
-        with th.no_grad():
-            # Move tensor to correct device if needed
-            token_ids_tensor = self.reasoning_token_ids.to(self.device)
+        self.resize_token_embeddings(self.standard_vocab_size + self.reasoning_vocab_size)
 
-            # Get the reasoning token indices (after standard vocab)
+        with th.no_grad():
+            token_ids_tensor = self.reasoning_token_ids.to(self.device)
             reasoning_start = self.standard_vocab_size
 
-            # Copy embeddings efficiently using tensor indexing
+            # copy embeddings from target tokens to reasoning tokens
             self.model.embed_tokens.weight[reasoning_start:] = self.model.embed_tokens.weight[
                 token_ids_tensor
             ]
             self.lm_head.weight[reasoning_start:] = self.lm_head.weight[token_ids_tensor]
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        pretrained_model_name_or_path: str,
+        reasoning_token_ids: Sequence[int] = tuple(),
+        **kwargs: dict[str, Any],
+    ) -> "Qwen3ReasoningVocabForCausalLM":
+        """
+        Load a pretrained model with reasoning vocabulary support.
+        This method loads a pretrained Qwen3 model and extends it with reasoning
+        vocabulary by:
+        1. Loading the config
+        2. Creating an instance with reasoning vocabulary
+        3. Loading pretrained weights (strict=False to handle new reasoning tokens)
+        Args:
+            pretrained_model_name_or_path: Model name or path
+            reasoning_token_ids: Sequence of token IDs to initialize reasoning vocab from
+            **kwargs: Additional arguments passed to from_pretrained
+        Returns:
+            Qwen3ReasoningVocabForCausalLM instance with pretrained weights
+        """
+        model = super().from_pretrained(
+            pretrained_model_name_or_path,
+            trust_remote_code=kwargs.get("trust_remote_code", False),
+        )
+        model._init_reasoning_vocab(model.config.vocab_size, reasoning_token_ids)
+
+        return model
 
     def get_reasoning_token_ids(self) -> tuple[int, ...]:
         """
