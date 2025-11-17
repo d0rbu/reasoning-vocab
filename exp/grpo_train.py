@@ -142,17 +142,13 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
 
-    def format_example(example: dict[str, Any]) -> dict[str, str]:
+    def format_example(example: dict[str, Any]) -> dict[str, list[dict[str, str]] | str]:
         # Create messages in chat format (no system prompt)
-        messages = [
+        prompt = [
             {"role": "user", "content": str(example["problem"])},
         ]
 
-        # Apply chat template to get the formatted prompt
-        # add_generation_prompt=True adds the assistant prompt at the end
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
-        return {"prompt": str(prompt), "answer": str(example["answer"])}
+        return {"prompt": prompt, "solution": str(example["answer"])}
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
         return dataset.map(format_example)
@@ -288,7 +284,7 @@ def main(cfg: DictConfig):
     # This serves as the baseline for visualization, showing the initialized model
     # with reasoning vocabulary but no training
     checkpoint_0_path = Path(cfg.output_dir) / "checkpoint-0"
-    logger.info(f"Saving initial checkpoint to {checkpoint_0_path}")
+    logger.debug(f"Saving initial checkpoint to {checkpoint_0_path}")
     trainer.save_model(str(checkpoint_0_path))
 
     # Save reasoning token map for checkpoint-0
@@ -297,7 +293,7 @@ def main(cfg: DictConfig):
         f"Model must be Qwen3ReasoningVocabForCausalLM, got {type(model)}"
     )
     save_reasoning_token_map(checkpoint_0_path, model)
-    logger.info("Saved reasoning token map for checkpoint-0")
+    logger.debug("Saved reasoning token map for checkpoint-0")
 
     # Train
     logger.info("=" * 80)
