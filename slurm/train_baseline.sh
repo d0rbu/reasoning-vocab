@@ -9,7 +9,7 @@
 #SBATCH --mem=128G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:h100:2
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
