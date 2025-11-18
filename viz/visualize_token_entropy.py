@@ -65,7 +65,7 @@ def compute_token_entropies_from_model(
     dataset: list[str],
     vocab_size: int,
     max_samples: int | None = None,
-    max_length: int = 512,
+    max_length: int = 32768,
     batch_size: int = 8,
 ) -> th.Tensor:
     """

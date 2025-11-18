@@ -34,7 +34,7 @@ def tiny_config():
         num_attention_heads=4,
         num_key_value_heads=2,
         intermediate_size=512,
-        max_position_embeddings=512,
+        max_position_embeddings=32768,
         rms_norm_eps=1e-6,
     )
     return config
