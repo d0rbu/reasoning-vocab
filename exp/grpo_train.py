@@ -35,6 +35,7 @@ from core.reasoning_vocab_model import (
     get_reasoning_class,
 )
 from core.reasoning_vocab_utils import get_reasoning_token_ids
+from core.tokenizer_utils import add_chat_template_if_needed
 from core.train_utils import save_reasoning_token_map
 
 DatasetType = Dataset | IterableDataset | DatasetDict | IterableDatasetDict
@@ -122,6 +123,7 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
         cfg.model.name,
         trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
     )
+    add_chat_template_if_needed(tokenizer, model.config._name_or_path)
 
     # Set pad token if not set
     if tokenizer.pad_token is None:
@@ -296,8 +298,8 @@ def main(cfg: DictConfig):
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        processing_class=tokenizer,  # GRPOTrainer uses processing_class, not tokenizer
-        reward_funcs=[accuracy_reward, think_format_reward],  # Multiple TRL rewards
+        processing_class=tokenizer,
+        reward_funcs=[accuracy_reward, think_format_reward],
     )
 
     # Save initial checkpoint (checkpoint-0) before training

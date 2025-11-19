@@ -8,11 +8,15 @@ This module contains:
 - TokenMultiplicityInfo dataclass for rich token information
 """
 
+import json
+import os
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 
 import torch as th
+from huggingface_hub import hf_hub_download
+from loguru import logger
 from transformers import PreTrainedTokenizer
 
 
@@ -306,3 +310,35 @@ class ReasoningTokenizer:
     def bos_token_id(self):
         """Get BOS token ID from base tokenizer."""
         return self.tokenizer.bos_token_id
+
+
+def add_chat_template_if_needed(tokenizer: PreTrainedTokenizer, repo_id: str) -> None:
+    """
+    Ensure a tokenizer has a chat template loaded.
+
+    If tokenizer.get_chat_template() raises ValueError/AttributeError, attempt to load
+    chat_template.json from the specified repo and assign it to tokenizer.chat_template.
+    """
+
+    try:
+        tokenizer.get_chat_template()
+        return
+    except ValueError:
+        logger.warning(
+            "Tokenizer does not have a chat template, searching for chat_template.json"
+        )
+
+    chat_template_path = hf_hub_download(
+        repo_id=repo_id,
+        filename="chat_template.json",
+        token=os.getenv("HF_TOKEN"),
+    )
+
+    with open(chat_template_path) as f:
+        template_data = json.load(f)
+
+    chat_template = template_data.get("chat_template")
+    assert chat_template is not None, "chat_template is required"
+
+    logger.debug(f"Loaded chat template for {repo_id}: {chat_template}")
+    tokenizer.chat_template = chat_template
