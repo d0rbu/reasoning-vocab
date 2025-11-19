@@ -42,4 +42,5 @@ source .venv/bin/activate
 uv run accelerate launch --num-processes 2 \
     exp/grpo_train.py \
     exp_name=baseline_run \
+    model=monad \
     model.reasoning_vocab_size=0
