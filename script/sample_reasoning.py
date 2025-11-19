@@ -27,6 +27,7 @@ from pathlib import Path
 import torch as th
 from datasets import load_dataset
 from loguru import logger
+import transformers
 from transformers import AutoConfig, AutoTokenizer
 from trl.rewards import accuracy_reward
 
@@ -35,14 +36,13 @@ from core.tokenizer_utils import ReasoningTokenizer
 
 
 def load_model_and_tokenizer(
-    checkpoint_path: str, device: str = "cuda"
+    checkpoint_path: str
 ) -> tuple[th.nn.Module, ReasoningTokenizer]:
     """
     Load a trained reasoning-vocab model and its tokenizer.
 
     Args:
         checkpoint_path: Path to model checkpoint directory
-        device: Device to load model on
 
     Returns:
         Tuple of (model, reasoning_tokenizer)
@@ -54,14 +54,11 @@ def load_model_and_tokenizer(
     model_class_name = config.model_type
 
     # Get the appropriate reasoning model class
-    from transformers import AutoModelForCausalLM
-
-    base_model_class = AutoModelForCausalLM.from_config(config).__class__
+    base_model_class = getattr(transformers, config.architectures[0])
     reasoning_model_class = get_reasoning_class(base_model_class)
 
     # Load the model
     model = reasoning_model_class.from_pretrained(checkpoint_path)
-    model = model.to(device)
     model.eval()
 
     # Load tokenizer
@@ -101,28 +98,32 @@ def prepare_dataset(dataset_name: str, split: str, num_samples: int):
     return dataset
 
 
-def format_prompt(example: dict, dataset_name: str) -> str:
+def format_prompt(example: dict, dataset_name: str, tokenizer: ReasoningTokenizer) -> str:
     """
     Format a dataset example into a prompt.
 
     Args:
         example: Dataset example
         dataset_name: Name of the dataset for format selection
+        tokenizer: ReasoningTokenizer for chat template
 
     Returns:
         Formatted prompt string
     """
     # GSM8K format
     if "gsm8k" in dataset_name.lower():
-        return f"<|im_start|>user\n{example['question']}<|im_end|>\n<|im_start|>assistant\n"
+        messages = [{"role": "user", "content": example['question']}]
+        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     # MATH format
     if "math" in dataset_name.lower():
-        return f"<|im_start|>user\n{example['problem']}<|im_end|>\n<|im_start|>assistant\n"
+        messages = [{"role": "user", "content": example['problem']}]
+        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     # Default format
     if "question" in example:
-        return f"<|im_start|>user\n{example['question']}<|im_end|>\n<|im_start|>assistant\n"
+        messages = [{"role": "user", "content": example['question']}]
+        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
     raise ValueError(f"Unknown dataset format for: {dataset_name}")
 
@@ -161,9 +162,10 @@ def generate_sample(
     model: th.nn.Module,
     tokenizer: ReasoningTokenizer,
     prompt: str,
-    max_new_tokens: int = 512,
-    temperature: float = 0.7,
+    max_new_tokens: int = 8192,
+    temperature: float = 0.6,
     do_sample: bool = True,
+    use_reasoning_logits_processor: bool = False,
 ) -> tuple[list[int], str, list[int]]:
     """
     Generate a response from the model with reasoning token tracking.
@@ -175,6 +177,7 @@ def generate_sample(
         max_new_tokens: Maximum tokens to generate
         temperature: Sampling temperature
         do_sample: Whether to sample (vs greedy decoding)
+        use_reasoning_logits_processor: Whether to use reasoning logits processor
 
     Returns:
         Tuple of (token_ids, decoded_text, multiplicities)
@@ -182,13 +185,15 @@ def generate_sample(
     # Encode prompt
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
 
-    # Create logits processor for reasoning vocabulary
-    logits_processor = ReasoningVocabLogitsProcessor(
-        standard_vocab_size=model.standard_vocab_size,
-        tokenizer=tokenizer,
-        think_tag="<think>",
-        end_think_tag="</think>",
-    )
+    # Create logits processor for reasoning vocabulary (if enabled)
+    logits_processor = None
+    if use_reasoning_logits_processor:
+        logits_processor = ReasoningVocabLogitsProcessor(
+            standard_vocab_size=model.standard_vocab_size,
+            tokenizer=tokenizer,
+            think_tag="<think>",
+            end_think_tag="</think>",
+        )
 
     # Generate
     with th.no_grad():
@@ -198,7 +203,7 @@ def generate_sample(
             temperature=temperature,
             do_sample=do_sample,
             pad_token_id=tokenizer.tokenizer.eos_token_id,
-            logits_processor=[logits_processor],
+            logits_processor=[logits_processor] if logits_processor else [],
         )
 
     # Extract generated tokens (remove prompt)
@@ -289,8 +294,8 @@ def main():
     parser.add_argument(
         "--dataset",
         type=str,
-        default="openai/gsm8k",
-        help="HuggingFace dataset name (default: openai/gsm8k)",
+        default="agentica-org/DeepScaleR-Preview-Dataset",
+        help="HuggingFace dataset name (default: agentica-org/DeepScaleR-Preview-Dataset)",
     )
     parser.add_argument(
         "--dataset_split", type=str, default="test", help="Dataset split (default: test)"
@@ -307,14 +312,18 @@ def main():
     parser.add_argument(
         "--max_new_tokens",
         type=int,
-        default=512,
-        help="Maximum tokens to generate (default: 512)",
+        default=8192,
+        help="Maximum tokens to generate (default: 8192)",
     )
     parser.add_argument(
-        "--temperature", type=float, default=0.7, help="Sampling temperature (default: 0.7)"
+        "--temperature", type=float, default=0.6, help="Sampling temperature (default: 0.6)"
     )
-    parser.add_argument("--device", type=str, default="cuda", help="Device to use (default: cuda)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
+    parser.add_argument(
+        "--use_reasoning_logits_processor",
+        action="store_true",
+        help="Use reasoning logits processor during generation"
+    )
 
     args = parser.parse_args()
 
@@ -328,7 +337,7 @@ def main():
     logger.info(f"Output directory: {output_dir}")
 
     # Load model and tokenizer
-    model, tokenizer = load_model_and_tokenizer(args.checkpoint, device=args.device)
+    model, tokenizer = load_model_and_tokenizer(args.checkpoint)
 
     # Load dataset
     dataset = prepare_dataset(args.dataset, args.dataset_split, args.num_samples)
@@ -343,7 +352,7 @@ def main():
         logger.info(f"Sample {idx + 1}/{args.num_samples}")
 
         # Format prompt and get ground truth
-        prompt = format_prompt(example, args.dataset)
+        prompt = format_prompt(example, args.dataset, tokenizer)
         ground_truth = extract_answer(example, args.dataset)
 
         # Generate
@@ -353,6 +362,7 @@ def main():
             prompt=prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
+            use_reasoning_logits_processor=args.use_reasoning_logits_processor,
         )
 
         # Check correctness
