@@ -299,7 +299,7 @@ def main(cfg: DictConfig):
     logger.info("=" * 80)
     logger.info("Starting training...")
     logger.info("=" * 80)
-    trainer.train(resume_from_checkpoint=True)
+    trainer.train(resume_from_checkpoint=os.path.exists(cfg.output_dir))
 
     # Save final model
     final_model_path = Path(cfg.output_dir) / "final_model"
