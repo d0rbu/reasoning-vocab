@@ -9,10 +9,9 @@ This module contains the extended Qwen3ForCausalLM class with:
 
 from abc import abstractmethod
 from collections.abc import Sequence
-from typing import Protocol, runtime_checkable, TypeVar
 
 import torch as th
-from transformers import LlamaForCausalLM, PretrainedConfig, PreTrainedModel, Qwen3ForCausalLM, PreTrainedModel
+from transformers import LlamaForCausalLM, PretrainedConfig, PreTrainedModel, Qwen3ForCausalLM
 from transformers.generation.logits_process import LogitsProcessor
 
 from core.tokenizer_utils import ReasoningTokenizer
@@ -73,7 +72,6 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
         return scores
 
 
-@runtime_checkable
 class ReasoningVocabModel:
     """
     Base class for reasoning vocabulary models.
