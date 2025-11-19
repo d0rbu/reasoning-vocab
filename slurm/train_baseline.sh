@@ -7,9 +7,9 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
-#SBATCH --output=baseline-%j.out
+#SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:h100:2
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -39,7 +39,8 @@ source .venv/bin/activate
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-srun --ntasks=$SLURM_NTASKS --ntasks-per-node=$SLURM_NTASKS_PER_NODE \
-    uv run python exp/grpo_train.py \
+uv run accelerate launch --num_processes 2 \
+    exp/grpo_train.py \
     exp_name=baseline_run \
+    model=monad \
     model.reasoning_vocab_size=0

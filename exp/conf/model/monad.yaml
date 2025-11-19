@@ -1,7 +1,7 @@
-# Model configuration for Qwen3-0.6B with optional reasoning vocabulary
+# Model configuration for PleIAs/Monad with optional reasoning vocabulary
 
 # Model identifier from HuggingFace
-name: "Qwen/Qwen3-0.6B"
+name: "PleIAs/Monad"
 
 # Reasoning vocabulary settings
 reasoning_vocab_size: 0  # 0 means baseline (no reasoning vocab), set to >0 to enable

@@ -13,20 +13,34 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
+import datasets.builder
 import hydra
 import torch as th
+import transformers
 import wandb
-from datasets import Dataset, load_dataset
+from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
-    AutoModelForCausalLM,
+    AutoConfig,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
 )
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
+
+from core.reasoning_vocab_model import (
+    ReasoningVocabModel,
+    get_reasoning_class,
+)
+from core.reasoning_vocab_utils import get_reasoning_token_ids
+from core.tokenizer_utils import add_chat_template_if_needed
+from core.train_utils import save_reasoning_token_map
+
+DatasetType = Dataset | IterableDataset | DatasetDict | IterableDatasetDict
+ListDatasetType = Dataset | IterableDataset
+SizedDatasetType = Dataset | DatasetDict
 
 
 def setup_wandb(cfg: DictConfig) -> None:
@@ -79,13 +93,28 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     }
     torch_dtype = dtype_map.get(cfg.model.model_kwargs.torch_dtype, th.bfloat16)
 
-    # Load model with kwargs from config (unpacking model_kwargs)
+    # Prepare reasoning token IDs based on reasoning_vocab_size
+    reasoning_vocab_size = int(cfg.model.reasoning_vocab_size)
+    reasoning_token_ids = get_reasoning_token_ids(reasoning_vocab_size)
+    logger.info(f"Initializing model with reasoning vocab size: {reasoning_vocab_size}")
+
+    # Load model with pretrained weights and reasoning vocabulary
     model_kwargs_raw = OmegaConf.to_container(cfg.model.model_kwargs, resolve=True)
     model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
-    model_kwargs["torch_dtype"] = torch_dtype  # Override with mapped dtype
+    model_kwargs["torch_dtype"] = torch_dtype
 
-    model = AutoModelForCausalLM.from_pretrained(
+    model_config = AutoConfig.from_pretrained(cfg.model.name)
+
+    assert len(model_config.architectures) == 1, (
+        f"Model {cfg.model.name} must have exactly one architecture, got {model_config.architectures}"
+    )
+
+    model_class = getattr(transformers, model_config.architectures[0])
+    reasoning_model_class = get_reasoning_class(model_class)
+
+    model = reasoning_model_class.from_pretrained(
         cfg.model.name,
+        reasoning_token_ids=reasoning_token_ids,
         **model_kwargs,
     )
 
@@ -94,11 +123,15 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
         cfg.model.name,
         trust_remote_code=cfg.model.model_kwargs.trust_remote_code,
     )
+    add_chat_template_if_needed(tokenizer, model.config._name_or_path)
 
     # Set pad token if not set
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = tokenizer.eos_token_id
+
+    # Always ensure model config has pad_token_id
+    if model.config.pad_token_id is None and tokenizer.pad_token_id is not None:
+        model.config.pad_token_id = tokenizer.pad_token_id
 
     # Enable gradient checkpointing if specified
     if cfg.training.gradient_checkpointing:
@@ -107,11 +140,13 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     num_params = sum(p.numel() for p in model.parameters()) / 1e9
     logger.debug(f"Model loaded: {model.__class__.__name__}")
     logger.debug(f"Model size: {num_params:.2f}B parameters")
+    logger.debug(f"Reasoning vocab size: {model.reasoning_vocab_size}")
+    logger.debug(f"Standard vocab size: {model.standard_vocab_size}")
 
     return model, tokenizer
 
 
-def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Dataset:
+def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> DatasetType:
     """
     Preprocess dataset into conversational format using chat template.
 
@@ -123,22 +158,21 @@ def preprocess_dataset(dataset: Dataset, tokenizer: PreTrainedTokenizer) -> Data
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
 
-    def format_example(example: dict[str, Any]) -> dict[str, str]:
+    def format_example(example: dict[str, Any]) -> dict[str, list[dict[str, str]] | str]:
         # Create messages in chat format (no system prompt)
-        messages = [
+        prompt = [
             {"role": "user", "content": str(example["problem"])},
         ]
 
-        # Apply chat template to get the formatted prompt
-        # add_generation_prompt=True adds the assistant prompt at the end
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        return {"prompt": prompt, "solution": str(example["answer"])}
 
-        return {"prompt": str(prompt), "answer": str(example["answer"])}
+    if isinstance(dataset, IterableDataset | IterableDatasetDict):
+        return dataset.map(format_example)
+    else:
+        return dataset.map(format_example, desc="Formatting dataset with chat template")
 
-    return dataset.map(format_example, desc="Formatting dataset with chat template")
 
-
-def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> Dataset:
+def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) -> DatasetType:
     """
     Load and preprocess dataset.
 
@@ -151,22 +185,34 @@ def load_and_prepare_dataset(cfg: DictConfig, tokenizer: PreTrainedTokenizer) ->
     """
     logger.info(f"Loading dataset: {cfg.dataset.name}")
 
+    ignore_sufficient_disk_space_check = cfg.dataset.ignore_sufficient_disk_space_check
+    if ignore_sufficient_disk_space_check:
+        logger.warning(
+            "Ignoring sufficient disk space check. Please make sure you actually have enough disk space to load the dataset!"
+        )
+        # i dont like this solution either, but its to get around cluster nfs shenanigans
+        datasets.builder.has_sufficient_disk_space = lambda needed_bytes, directory=".": True  # type: ignore
+
     # Load dataset - cast to Dataset type since we know we're loading a specific split
-    dataset_raw = load_dataset(cfg.dataset.name, split=cfg.dataset.train_split)
-    dataset = cast(Dataset, dataset_raw)
+    dataset = load_dataset(
+        cfg.dataset.name, split=cfg.dataset.train_split, streaming=cfg.dataset.streaming
+    )
 
     # Subsample if requested
     if cfg.dataset.max_train_samples is not None:
-        dataset = cast(
-            Dataset,
-            dataset.select(range(min(int(cfg.dataset.max_train_samples), len(dataset)))),
+        assert isinstance(dataset, ListDatasetType), (
+            f"Dataset must be a Dataset or IterableDataset object, got {type(dataset)}"
         )
-        logger.debug(f"Subsampled to {len(dataset)} examples")
+        dataset = dataset.take(int(cfg.dataset.max_train_samples))
+        logger.debug(f"Subsampled to {cfg.dataset.max_train_samples} examples")
 
     # Preprocess with chat template (no system prompt)
     dataset = preprocess_dataset(dataset, tokenizer)
 
-    logger.debug(f"Dataset prepared with {len(dataset)} examples")
+    if isinstance(dataset, SizedDatasetType):
+        logger.debug(f"Dataset prepared with {len(dataset)} examples")
+    else:
+        logger.debug("Streaming dataset prepared")
 
     return dataset
 
@@ -233,6 +279,15 @@ def main(cfg: DictConfig):
 
     # Load and prepare dataset
     train_dataset = load_and_prepare_dataset(cfg, tokenizer)
+    assert isinstance(train_dataset, ListDatasetType), (
+        f"Train dataset must be a Dataset or IterableDataset object, got {type(train_dataset)}"
+    )
+
+    checkpoint_exists = os.path.exists(cfg.output_dir)
+    if checkpoint_exists:
+        logger.info(f"Checkpoint exists at {cfg.output_dir}. Resuming training...")
+    else:
+        logger.info(f"No checkpoint found at {cfg.output_dir}. Starting training from scratch...")
 
     # Create GRPO config
     training_args = create_grpo_config(cfg)
@@ -243,15 +298,29 @@ def main(cfg: DictConfig):
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        processing_class=tokenizer,  # GRPOTrainer uses processing_class, not tokenizer
-        reward_funcs=[accuracy_reward, think_format_reward],  # Multiple TRL rewards
+        processing_class=tokenizer,
+        reward_funcs=[accuracy_reward, think_format_reward],
     )
+
+    # Save initial checkpoint (checkpoint-0) before training
+    # This serves as the baseline for visualization, showing the initialized model
+    # with reasoning vocabulary but no training
+    checkpoint_0_path = Path(cfg.output_dir) / "checkpoint-0"
+    logger.debug(f"Saving initial checkpoint to {checkpoint_0_path}")
+    trainer.save_model(str(checkpoint_0_path))
+
+    # Save reasoning token map for checkpoint-0
+    assert isinstance(model, ReasoningVocabModel), (
+        f"Model must be ReasoningVocabModel, got {type(model)}"
+    )
+    save_reasoning_token_map(checkpoint_0_path, model)
+    logger.debug("Saved reasoning token map for checkpoint-0")
 
     # Train
     logger.info("=" * 80)
     logger.info("Starting training...")
     logger.info("=" * 80)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=checkpoint_exists)
 
     # Save final model
     final_model_path = Path(cfg.output_dir) / "final_model"

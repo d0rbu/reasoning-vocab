@@ -2,6 +2,8 @@
 
 # Dataset identifier from HuggingFace
 name: "agentica-org/DeepScaleR-Preview-Dataset"
+streaming: false
+ignore_sufficient_disk_space_check: true
 
 # Split configuration
 train_split: "train"
