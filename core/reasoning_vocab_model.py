@@ -72,7 +72,7 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
         return scores
 
 
-class ReasoningVocabModel:
+class ReasoningVocabModel(PreTrainedModel):
     """
     Base class for reasoning vocabulary models.
     """

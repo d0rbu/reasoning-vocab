@@ -7,8 +7,10 @@ This module contains:
 """
 
 import json
+import os
 from pathlib import Path
 
+from huggingface_hub import hf_hub_download
 from loguru import logger
 from transformers import AutoTokenizer, TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
@@ -53,6 +55,30 @@ def save_reasoning_token_map(checkpoint_path: Path, model: ReasoningVocabModel) 
     base_tokenizer = AutoTokenizer.from_pretrained(
         model.config._name_or_path, trust_remote_code=True
     )
+    try:
+        base_tokenizer.get_chat_template()
+    except ValueError:
+        logger.warning("Base tokenizer does not support chat templates, searching for chat_template.json")
+        chat_template_path = hf_hub_download(
+            repo_id=model.config._name_or_path,
+            filename="chat_template.json",
+            token=os.getenv("HF_TOKEN"),
+        )
+
+        with open(chat_template_path) as f:
+            template_data = json.load(f)
+
+        chat_template = template_data.get("chat_template")
+        _eos_token = template_data.get("eos_token")
+        _bos_token = template_data.get("bos_token")
+        _stop_tokens = template_data.get("stop")
+        _role_map = template_data.get("roles")
+
+        assert chat_template is not None, "chat_template is required"
+
+        logger.debug(f"Loaded chat template: {chat_template}")
+        base_tokenizer.chat_template = chat_template
+
     reasoning_tokenizer = ReasoningTokenizer(base_tokenizer, reasoning_token_ids)
 
     # Get multiplicities from the reasoning tokenizer (0-indexed: 0, 1, 2...)
