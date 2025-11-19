@@ -8,22 +8,16 @@ This script will:
 - Track token multiplicity for reasoning tokens
 """
 
-# TODO: Implement reasoning output visualization
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
+import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-try:  # Optional dependency
-    import matplotlib.pyplot as plt
-
-    HAS_MPL = True
-except Exception:  # pragma: no cover - environment without matplotlib
-    HAS_MPL = False
+import matplotlib.pyplot as plt
 
 
 @dataclass(frozen=True)
@@ -31,48 +25,41 @@ class RenderOutputs:
     """Container for the three render outputs.
 
     Attributes:
-        image_path: Path to saved PNG image (None if image rendering disabled/unavailable)
+        image_path: Path to saved PNG image
         markdown_text: Markdown-formatted string
         latex_text: LaTeX document string
+        pdf_path: Path to saved PDF (None if pdflatex unavailable)
     """
 
-    image_path: Path | None
+    image_path: Path
     markdown_text: str
     latex_text: str
+    pdf_path: Path | None
 
 
 # A small, visually distinct color palette (hex)
-# Note: Kept short intentionally; hashing selects deterministically
+# Indexed directly by multiplicity (1=red, 2=teal, 3=yellow, etc.)
 DEFAULT_PALETTE: tuple[str, ...] = (
-    "#ff6b6b",  # red
-    "#4ecdc4",  # teal
-    "#ffd93d",  # yellow
-    "#5c7cfa",  # indigo
-    "#f06595",  # pink
-    "#51cf66",  # green
-    "#845ef7",  # violet
-    "#ffa94d",  # orange
+    "#ff6b6b",  # red - multiplicity 1
+    "#4ecdc4",  # teal - multiplicity 2
+    "#ffd93d",  # yellow - multiplicity 3
+    "#5c7cfa",  # indigo - multiplicity 4
+    "#f06595",  # pink - multiplicity 5
+    "#51cf66",  # green - multiplicity 6
+    "#845ef7",  # violet - multiplicity 7
+    "#ffa94d",  # orange - multiplicity 8
 )
 
 
-def _stable_index_for_token(token: str, multiplicity: int, palette_size: int) -> int:
-    """Return a deterministic palette index for a (token, multiplicity) pair.
-
-    Uses BLAKE2b hash truncated to 8 bytes for speed and stability.
-    """
-    h = hashlib.blake2b(f"{token}::{multiplicity}".encode(), digest_size=8).digest()
-    as_int = int.from_bytes(h, byteorder="big", signed=False)
-    return as_int % max(1, palette_size)
-
-
-def color_for_token(token: str, multiplicity: int, palette: Sequence[str] = DEFAULT_PALETTE) -> str:
-    """Get a hex color for token+multiplicity using a stable mapping.
+def color_for_multiplicity(multiplicity: int, palette: Sequence[str] = DEFAULT_PALETTE) -> str:
+    """Get a hex color based on multiplicity.
 
     For multiplicity == 0 (standard vocab), returns a neutral gray.
+    For multiplicity >= 1, cycles through the palette.
     """
     if multiplicity <= 0:
         return "#333333"  # neutral gray for standard tokens
-    idx = _stable_index_for_token(token, multiplicity, len(palette))
+    idx = (multiplicity - 1) % len(palette)
     return palette[idx]
 
 
@@ -149,7 +136,7 @@ def render_latex(
         if int(m) <= 0:
             body_parts.append(esc)
         else:
-            color = color_for_token(t, int(m), palette)
+            color = color_for_multiplicity(int(m), palette)
             # xcolor supports HTML colors via [HTML]{RRGGBB}
             body_parts.append(f"\\textcolor[HTML]{{{color.lstrip('#').upper()}}}{{{esc}}}")
     body = " ".join(body_parts)
@@ -172,19 +159,16 @@ def render_latex(
     return doc
 
 
-def _maybe_render_image(
+def _render_image(
     tokens: Sequence[str],
     multiplicities: Sequence[int],
     out_path: Path,
     palette: Sequence[str] = DEFAULT_PALETTE,
-) -> Path | None:
-    """Render a simple horizontal text image with colored backgrounds (if MPL present).
+) -> Path:
+    """Render a simple horizontal text image with colored backgrounds.
 
-    Returns the output path if successful, else None.
+    Returns the output path.
     """
-    if not HAS_MPL:  # pragma: no cover - exercised in environments w/o MPL
-        return None
-
     # Basic monospace layout approximation
     fig, ax = plt.subplots(figsize=(12, 1.2))
     ax.axis("off")
@@ -198,7 +182,7 @@ def _maybe_render_image(
         tok_str = str(tok)
         width = (len(tok_str) + space) * char_w
         if int(mult) > 0:
-            color = color_for_token(tok_str, int(mult), palette)
+            color = color_for_multiplicity(int(mult), palette)
             bbox = dict(facecolor=color, edgecolor="none", boxstyle="round,pad=0.2")
             ax.text(
                 x,
@@ -221,13 +205,42 @@ def _maybe_render_image(
     return out_path
 
 
+def _render_pdf(tex_path: Path) -> Path | None:
+    """Compile LaTeX to PDF using pdflatex.
+
+    Returns PDF path if successful, None if pdflatex unavailable.
+    """
+    pdf_path = tex_path.with_suffix(".pdf")
+    try:
+        subprocess.run(
+            [
+                "pdflatex",
+                "-interaction=nonstopmode",
+                "-output-directory",
+                str(tex_path.parent),
+                str(tex_path),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
+        # Clean up aux files
+        for ext in [".aux", ".log"]:
+            aux_file = tex_path.with_suffix(ext)
+            if aux_file.exists():
+                aux_file.unlink()
+        return pdf_path if pdf_path.exists() else None
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+
+
 def visualize_reasoning(
     tokens: Sequence[str],
     multiplicities: Sequence[int],
     out_prefix: Path,
     palette: Sequence[str] = DEFAULT_PALETTE,
 ) -> RenderOutputs:
-    """Render all three representations given tokens and multiplicities.
+    """Render all representations given tokens and multiplicities.
 
     Args:
         tokens: token strings in order
@@ -240,18 +253,21 @@ def visualize_reasoning(
     """
     assert len(tokens) == len(multiplicities), "tokens and multiplicities must be same length"
 
-    img_path = _maybe_render_image(tokens, multiplicities, Path(str(out_prefix) + ".png"), palette)
+    img_path = _render_image(tokens, multiplicities, Path(str(out_prefix) + ".png"), palette)
     md = render_markdown(tokens, multiplicities)
     tex = render_latex(tokens, multiplicities, palette)
 
-    # Persist textual outputs next to image
+    # Persist textual outputs
     md_path = Path(str(out_prefix) + ".md")
     tex_path = Path(str(out_prefix) + ".tex")
     md_path.parent.mkdir(parents=True, exist_ok=True)
     md_path.write_text(md)
     tex_path.write_text(tex)
 
-    return RenderOutputs(image_path=img_path, markdown_text=md, latex_text=tex)
+    # Try to compile PDF
+    pdf_path = _render_pdf(tex_path)
+
+    return RenderOutputs(image_path=img_path, markdown_text=md, latex_text=tex, pdf_path=pdf_path)
 
 
 def _load_tokens_from_json(json_path: Path) -> tuple[list[str], list[int]]:
@@ -294,12 +310,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     out = visualize_reasoning(tokens, multiplicities, Path(args.out_prefix))
 
     # Print where files were written for convenience
-    if out.image_path is not None:
-        print(f"Saved image: {out.image_path}")
+    print(f"Saved image: {out.image_path}")
     print(f"Saved markdown: {Path(args.out_prefix)}.md")
     print(f"Saved LaTeX: {Path(args.out_prefix)}.tex")
+    if out.pdf_path:
+        print(f"Saved PDF: {out.pdf_path}")
     return 0
 
 
-if __name__ == "__main__":  # pragma: no cover - CLI
+if __name__ == "__main__":
     raise SystemExit(main())

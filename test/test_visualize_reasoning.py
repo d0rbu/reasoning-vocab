@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from viz.visualize_reasoning import (
-    color_for_token,
+    color_for_multiplicity,
     render_latex,
     render_markdown,
 )
@@ -42,22 +42,22 @@ class TestMarkdownFormatting:
 
 
 class TestColorMapping:
-    def test_color_stability(self):
-        c1 = color_for_token("hello", 3)
-        c2 = color_for_token("hello", 3)
+    def test_color_by_multiplicity(self):
+        # Same multiplicity always returns same color
+        c1 = color_for_multiplicity(3)
+        c2 = color_for_multiplicity(3)
         assert c1 == c2
 
     def test_color_changes_with_multiplicity(self):
-        # Not guaranteed different with a tiny palette, but very likely.
-        # Use a larger custom palette to ensure difference.
+        # Different multiplicities should return different colors
         big_palette = tuple(f"#{i:06x}" for i in range(1, 64))
-        c1b = color_for_token("hello", 1, big_palette)
-        c2b = color_for_token("hello", 2, big_palette)
+        c1b = color_for_multiplicity(1, big_palette)
+        c2b = color_for_multiplicity(2, big_palette)
         assert c1b != c2b
 
     def test_standard_vocab_color_is_neutral(self):
-        assert color_for_token("std", 0) == "#333333"
-        assert color_for_token("std", -1) == "#333333"
+        assert color_for_multiplicity(0) == "#333333"
+        assert color_for_multiplicity(-1) == "#333333"
 
 
 class TestLatexRendering:
@@ -86,7 +86,8 @@ class TestImageRendering:
         multiplicities = [0, 1, 2]
         out_prefix = tmp_path / "sample"
         out = visualize_reasoning(tokens, multiplicities, out_prefix)
-        assert out.image_path is not None and out.image_path.exists()
+        assert out.image_path.exists()
         # Also ensure md/tex were written
         assert (tmp_path / "sample.md").exists()
         assert (tmp_path / "sample.tex").exists()
+        # PDF may or may not exist depending on pdflatex availability
