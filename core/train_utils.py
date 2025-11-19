@@ -48,7 +48,9 @@ def save_reasoning_token_map(checkpoint_path: Path, model: Qwen3ReasoningVocabFo
     # Use ReasoningTokenizer to compute multiplicities
     # We create a temporary tokenizer just to leverage its multiplicity computation
     # Note: We need to load the actual tokenizer from checkpoint for proper vocab_size
-    base_tokenizer = AutoTokenizer.from_pretrained(checkpoint_path.absolute())
+    base_tokenizer = AutoTokenizer.from_pretrained(
+        model.config._name_or_path, trust_remote_code=True
+    )
     reasoning_tokenizer = ReasoningTokenizer(base_tokenizer, reasoning_token_ids)
 
     # Get multiplicities from the reasoning tokenizer (0-indexed: 0, 1, 2...)
