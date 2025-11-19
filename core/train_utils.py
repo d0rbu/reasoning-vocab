@@ -13,11 +13,13 @@ from loguru import logger
 from transformers import AutoTokenizer, TrainerCallback, TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
-from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.reasoning_vocab_model import (
+    ReasoningVocabModel,
+)
 from core.tokenizer_utils import ReasoningTokenizer
 
 
-def save_reasoning_token_map(checkpoint_path: Path, model: Qwen3ReasoningVocabForCausalLM) -> None:
+def save_reasoning_token_map(checkpoint_path: Path, model: ReasoningVocabModel) -> None:
     """
     Save reasoning token map alongside model checkpoint.
 
@@ -99,7 +101,7 @@ class ReasoningTokenMapCallback(TrainerCallback):
         args: TrainingArguments,
         state: TrainerState,
         control: TrainerControl,
-        model: Qwen3ReasoningVocabForCausalLM | None = None,
+        model: ReasoningVocabModel | None = None,
         **kwargs,
     ) -> TrainerControl:
         """
@@ -118,6 +120,10 @@ class ReasoningTokenMapCallback(TrainerCallback):
         if model is None:
             logger.warning("No model provided to ReasoningTokenMapCallback.on_save()")
             return control
+
+        assert isinstance(model, ReasoningVocabModel), (
+            f"Model must be ReasoningVocabModel, got {type(model)}"
+        )
 
         # Get checkpoint path from args
         checkpoint_path = Path(args.output_dir)

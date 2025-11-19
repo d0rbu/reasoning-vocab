@@ -16,11 +16,13 @@ from typing import Any, cast
 import datasets.builder
 import hydra
 import torch as th
+import transformers
 import wandb
 from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
@@ -28,7 +30,10 @@ from transformers import (
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
-from core.modeling_qwen3_reasoning import Qwen3ReasoningVocabForCausalLM
+from core.reasoning_vocab_model import (
+    ReasoningVocabModel,
+    get_reasoning_class,
+)
 from core.reasoning_vocab_utils import get_reasoning_token_ids
 from core.train_utils import save_reasoning_token_map
 
@@ -97,7 +102,16 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     model_kwargs: dict[str, Any] = cast(dict[str, Any], model_kwargs_raw)
     model_kwargs["torch_dtype"] = torch_dtype
 
-    model = Qwen3ReasoningVocabForCausalLM.from_pretrained(
+    model_config = AutoConfig.from_pretrained(cfg.model.name)
+
+    assert len(model_config.architectures) == 1, (
+        f"Model {cfg.model.name} must have exactly one architecture, got {model_config.architectures}"
+    )
+
+    model_class = getattr(transformers, model_config.architectures[0])
+    reasoning_model_class = get_reasoning_class(model_class)
+
+    model = reasoning_model_class.from_pretrained(
         cfg.model.name,
         reasoning_token_ids=reasoning_token_ids,
         **model_kwargs,
@@ -294,9 +308,8 @@ def main(cfg: DictConfig):
     trainer.save_model(str(checkpoint_0_path))
 
     # Save reasoning token map for checkpoint-0
-    # Model must be Qwen3ReasoningVocabForCausalLM for this training pipeline
-    assert isinstance(model, Qwen3ReasoningVocabForCausalLM), (
-        f"Model must be Qwen3ReasoningVocabForCausalLM, got {type(model)}"
+    assert isinstance(model, ReasoningVocabModel), (
+        f"Model must be ReasoningVocabModel, got {type(model)}"
     )
     save_reasoning_token_map(checkpoint_0_path, model)
     logger.debug("Saved reasoning token map for checkpoint-0")

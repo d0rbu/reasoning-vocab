@@ -1,15 +1,17 @@
 """Core modules for reasoning vocabulary models."""
 
-from .modeling_qwen3_reasoning import (
+from .reasoning_vocab_model import (
+    LlamaReasoningVocabForCausalLM,
     Qwen3ReasoningVocabForCausalLM,
-    ReasoningVocabLogitsProcessor,
+    get_reasoning_class,
 )
 from .reasoning_vocab_utils import get_reasoning_token_ids
 from .tokenizer_utils import ReasoningTokenizer, TokenMultiplicityInfo
 
 __all__ = [
     "Qwen3ReasoningVocabForCausalLM",
-    "ReasoningVocabLogitsProcessor",
+    "LlamaReasoningVocabForCausalLM",
+    "get_reasoning_class",
     "ReasoningTokenizer",
     "TokenMultiplicityInfo",
     "get_reasoning_token_ids",

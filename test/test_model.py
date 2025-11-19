@@ -14,7 +14,7 @@ import torch as th
 from transformers import AutoTokenizer
 from transformers.generation.logits_process import LogitsProcessorList
 
-from core.modeling_qwen3_reasoning import (
+from core.reasoning_vocab_model import (
     Qwen3ReasoningVocabForCausalLM,
     ReasoningVocabLogitsProcessor,
 )
