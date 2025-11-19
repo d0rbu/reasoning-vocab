@@ -3,13 +3,13 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-reasoning
 #SBATCH --time=48:00:00
-#SBATCH --ntasks=2
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks=1
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --output=reasoning-%j
 #SBATCH --error=reasoning-%j.err
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:h100:2
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -40,7 +40,7 @@ source .venv/bin/activate
 # For Qwen3-0.6B, vocab_size is approximately 151646
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-srun --ntasks=$SLURM_NTASKS --ntasks-per-node=$SLURM_NTASKS_PER_NODE \
-    uv run python exp/grpo_train.py \
+uv run accelerate launch \
+    exp/grpo_train.py \
     exp_name=reasoning_vocab_run \
     model.reasoning_vocab_size=151646
