@@ -51,7 +51,7 @@ def test_model_initialization_no_reasoning(tiny_config):
     model = Qwen3ReasoningVocabForCausalLM(tiny_config)
 
     assert model.standard_vocab_size == tiny_config.vocab_size
-    assert model.num_reasoning_tokens == 0
+    assert model.num_reasoning_tokens() == 0
     assert len(model.reasoning_token_ids) == 0
     # Vocab size should remain unchanged
     assert model.get_input_embeddings().num_embeddings == tiny_config.vocab_size
@@ -64,7 +64,7 @@ def test_model_initialization_with_reasoning(tiny_config):
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
     assert model.standard_vocab_size == original_vocab_size
-    assert model.num_reasoning_tokens == 5
+    assert model.num_reasoning_tokens() == 5
     assert model.get_reasoning_token_ids() == tuple(reasoning_token_ids)
     # Vocab size should be extended
     assert model.get_input_embeddings().num_embeddings == original_vocab_size + len(
@@ -79,7 +79,7 @@ def test_model_initialization_with_all_tokens(tiny_config):
     model = Qwen3ReasoningVocabForCausalLM(tiny_config, reasoning_token_ids)
 
     assert model.standard_vocab_size == original_vocab_size
-    assert model.num_reasoning_tokens == original_vocab_size
+    assert model.num_reasoning_tokens() == original_vocab_size
     # Vocab size should be doubled
     assert model.get_input_embeddings().num_embeddings == original_vocab_size * 2
 

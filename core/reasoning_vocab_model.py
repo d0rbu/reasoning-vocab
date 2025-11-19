@@ -9,10 +9,10 @@ This module contains the extended Qwen3ForCausalLM class with:
 
 from abc import abstractmethod
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Protocol, runtime_checkable, TypeVar
 
 import torch as th
-from transformers import LlamaForCausalLM, PretrainedConfig, PreTrainedModel, Qwen3ForCausalLM
+from transformers import LlamaForCausalLM, PretrainedConfig, PreTrainedModel, Qwen3ForCausalLM, PreTrainedModel
 from transformers.generation.logits_process import LogitsProcessor
 
 from core.tokenizer_utils import ReasoningTokenizer
@@ -73,14 +73,11 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
         return scores
 
 
-class ReasoningVocabModel(Protocol):
+@runtime_checkable
+class ReasoningVocabModel:
     """
     Base class for reasoning vocabulary models.
     """
-
-    def __init__(self, config: PretrainedConfig, reasoning_token_ids: Sequence[int] = tuple()):
-        super().__init__(config)
-        self.init_reasoning_vocab(config.vocab_size, reasoning_token_ids)
 
     @abstractmethod
     def init_reasoning_vocab(
@@ -99,13 +96,12 @@ class ReasoningVocabModel(Protocol):
         pass
 
     @abstractmethod
-    @property
     def num_reasoning_tokens(self) -> int:
         """Get the number of reasoning tokens."""
         pass
 
 
-def get_reasoning_class(model_class: type[PreTrainedModel]) -> type[PreTrainedModel]:
+def get_reasoning_class[T: PreTrainedModel](model_class: type[T]) -> type[T]:
     """
     Get a reasoning-enabled class for a given model class.
 
@@ -115,7 +111,15 @@ def get_reasoning_class(model_class: type[PreTrainedModel]) -> type[PreTrainedMo
         Extended model class with reasoning vocabulary support
     """
 
+    assert issubclass(model_class, PreTrainedModel), (
+        f"Model class {model_class} must be a subclass of PreTrainedModel"
+    )
+
     class ReasoningModel(ReasoningVocabModel, model_class):
+        def __init__(self, config: PretrainedConfig, reasoning_token_ids: Sequence[int] = tuple()):
+            super().__init__(config)
+            self.init_reasoning_vocab(config.vocab_size, reasoning_token_ids)
+
         def init_reasoning_vocab(
             self, original_vocab_size: int, reasoning_token_ids: Sequence[int] = tuple()
         ) -> None:
@@ -145,7 +149,6 @@ def get_reasoning_class(model_class: type[PreTrainedModel]) -> type[PreTrainedMo
             """
             return tuple(self.reasoning_token_ids.tolist())
 
-        @property
         def num_reasoning_tokens(self) -> int:
             """Get the number of reasoning tokens."""
             return self.reasoning_vocab_size
