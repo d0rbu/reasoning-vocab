@@ -267,6 +267,12 @@ def main(cfg: DictConfig):
         f"Train dataset must be a Dataset or IterableDataset object, got {type(train_dataset)}"
     )
 
+    checkpoint_exists = os.path.exists(cfg.output_dir)
+    if checkpoint_exists:
+        logger.info(f"Checkpoint exists at {cfg.output_dir}. Resuming training...")
+    else:
+        logger.info(f"No checkpoint found at {cfg.output_dir}. Starting training from scratch...")
+
     # Create GRPO config
     training_args = create_grpo_config(cfg)
 
@@ -299,7 +305,7 @@ def main(cfg: DictConfig):
     logger.info("=" * 80)
     logger.info("Starting training...")
     logger.info("=" * 80)
-    trainer.train(resume_from_checkpoint=os.path.exists(cfg.output_dir))
+    trainer.train(resume_from_checkpoint=checkpoint_exists)
 
     # Save final model
     final_model_path = Path(cfg.output_dir) / "final_model"
