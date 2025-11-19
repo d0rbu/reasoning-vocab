@@ -324,9 +324,7 @@ def add_chat_template_if_needed(tokenizer: PreTrainedTokenizer, repo_id: str) ->
         tokenizer.get_chat_template()
         return
     except ValueError:
-        logger.warning(
-            "Tokenizer does not have a chat template, searching for chat_template.json"
-        )
+        logger.warning("Tokenizer does not have a chat template, searching for chat_template.json")
 
     chat_template_path = hf_hub_download(
         repo_id=repo_id,

@@ -12,15 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 @dataclass(frozen=True)
