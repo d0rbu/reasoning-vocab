@@ -12,12 +12,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -233,7 +236,7 @@ def _render_pdf(tex_path: Path) -> Path | None:
                 aux_file.unlink()
         return pdf_path if pdf_path.exists() else None
     except FileNotFoundError:
-        # pdflatex not installed - this is acceptable
+        logger.exception("pdflatex not found - PDF rendering unavailable")
         return None
 
 
