@@ -57,7 +57,8 @@ def color_for_multiplicity(multiplicity: int, palette: Sequence[str] = DEFAULT_P
     For multiplicity == 0 (standard vocab), returns a neutral gray.
     For multiplicity >= 1, cycles through the palette.
     """
-    if multiplicity <= 0:
+    assert multiplicity >= 0, f"multiplicity must be non-negative, got {multiplicity}"
+    if multiplicity == 0:
         return "#333333"  # neutral gray for standard tokens
     idx = (multiplicity - 1) % len(palette)
     return palette[idx]
@@ -209,6 +210,7 @@ def _render_pdf(tex_path: Path) -> Path | None:
     """Compile LaTeX to PDF using pdflatex.
 
     Returns PDF path if successful, None if pdflatex unavailable.
+    Raises CalledProcessError or TimeoutExpired if pdflatex fails.
     """
     pdf_path = tex_path.with_suffix(".pdf")
     try:
@@ -230,7 +232,8 @@ def _render_pdf(tex_path: Path) -> Path | None:
             if aux_file.exists():
                 aux_file.unlink()
         return pdf_path if pdf_path.exists() else None
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except FileNotFoundError:
+        # pdflatex not installed - this is acceptable
         return None
 
 

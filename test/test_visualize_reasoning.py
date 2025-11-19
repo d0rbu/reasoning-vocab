@@ -57,7 +57,10 @@ class TestColorMapping:
 
     def test_standard_vocab_color_is_neutral(self):
         assert color_for_multiplicity(0) == "#333333"
-        assert color_for_multiplicity(-1) == "#333333"
+
+    def test_negative_multiplicity_raises(self):
+        with pytest.raises(AssertionError, match="multiplicity must be non-negative"):
+            color_for_multiplicity(-1)
 
 
 class TestLatexRendering:
