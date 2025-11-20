@@ -186,9 +186,9 @@ def generate_sample(
     input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
 
     # Create logits processor for reasoning vocabulary (if enabled)
-    logits_processor = []
+    logits_processors = []
     if use_reasoning_logits_processor:
-        logits_processor.append(ReasoningVocabLogitsProcessor(
+        logits_processors.append(ReasoningVocabLogitsProcessor(
             standard_vocab_size=model.standard_vocab_size,
             tokenizer=tokenizer,
             think_tag="<think>",
@@ -203,7 +203,7 @@ def generate_sample(
             temperature=temperature,
             do_sample=do_sample,
             pad_token_id=tokenizer.tokenizer.eos_token_id,
-            logits_processor=logits_processor,
+            logits_processor=logits_processors,
         )
 
     # Extract generated tokens (remove prompt)
