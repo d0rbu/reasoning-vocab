@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch as th
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from omegaconf import DictConfig
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
@@ -34,6 +34,7 @@ from test.test_utils import (
     assert_dataset_fields,
     create_tiny_model,
     create_tiny_tokenizer,
+    narrow_to_dataset,
 )
 
 
@@ -97,6 +98,7 @@ class TestDatasetProcessing:
         """Test that preprocess_dataset creates correct fields."""
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Check that required fields exist
         assert_dataset_fields(processed, ["prompt", "answer"])
@@ -110,6 +112,7 @@ class TestDatasetProcessing:
         dataset = Dataset.from_list(sample_dataset_dict)
         processed = preprocess_dataset(dataset, tokenizer)
         assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Check first example
         assert "What is 2 + 2?" in processed[0]["prompt"]
@@ -130,6 +133,7 @@ class TestDatasetProcessing:
 
         processed = preprocess_dataset(sample_dataset, tokenizer)
         assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Verify prompt is a string and non-empty
         assert isinstance(processed[0]["prompt"], str)
@@ -156,6 +160,8 @@ class TestDatasetProcessing:
         assert len(subsampled) == max_samples
 
         processed = preprocess_dataset(subsampled, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
+        
         assert len(processed) == max_samples
 
 
@@ -319,6 +325,9 @@ class TestTrainingExecution:
 
         # Preprocess dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
 
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
@@ -354,6 +363,9 @@ class TestTrainingExecution:
 
         # Preprocess dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
 
         # Create minimal GRPO config for fast training
         minimal_hydra_config.training.num_train_epochs = 1
@@ -433,6 +445,7 @@ class TestEdgeCases:
         tokenizer = create_tiny_tokenizer()
 
         processed = preprocess_dataset(empty_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         assert len(processed) == 0
         # Empty dataset should still have the column structure after mapping
@@ -456,6 +469,7 @@ class TestEdgeCases:
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(dataset, tokenizer)
         assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Should not crash and should produce a prompt
         assert len(processed) == 1
@@ -475,6 +489,7 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(special_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Should handle special characters without crashing
         assert len(processed) == 1
@@ -494,6 +509,7 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(unicode_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         assert len(processed) == 1
         assert "π" in processed[0]["problem"] or "π" in str(processed[0])

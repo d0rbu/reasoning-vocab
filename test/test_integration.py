@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 import torch as th
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from omegaconf import DictConfig
 from trl import GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
@@ -42,6 +42,9 @@ class TestEndToEndDataPipeline:
 
         # Process dataset
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed, Dataset), f"Expected Dataset, got {type(processed)}"
 
         # Verify transformation
         assert_dataset_fields(processed, ["prompt", "answer"])
@@ -65,6 +68,9 @@ class TestEndToEndDataPipeline:
         # Process dataset
         processed = preprocess_dataset(sample_dataset, tokenizer)
         assert processed is not None, "preprocess_dataset should not return None"
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed, Dataset), f"Expected Dataset, got {type(processed)}"
 
         # Take first example and tokenize
         prompt = processed[0]["prompt"]
@@ -150,6 +156,9 @@ class TestTrainerIntegration:
 
         # Process dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
 
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
@@ -183,6 +192,10 @@ class TestTrainerIntegration:
         model = create_tiny_model()
         tokenizer = create_tiny_tokenizer()
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
+        
         training_args = create_grpo_config(minimal_hydra_config)
 
         # Wrap reward function to match expected signature
@@ -343,6 +356,9 @@ class TestErrorHandling:
         tokenizer = create_tiny_tokenizer()
 
         processed = preprocess_dataset(empty_dataset, tokenizer)
+        
+        # Type narrowing for TY type checker
+        assert isinstance(processed, Dataset), f"Expected Dataset, got {type(processed)}"
 
         assert len(processed) == 0
         # Empty datasets may not have column structure
