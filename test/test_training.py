@@ -117,6 +117,7 @@ class TestDatasetProcessing:
         example = processed[0]
         prompt = example.get("prompt")
 
+        assert isinstance(prompt, list)
         assert len(prompt) == 1
 
         message = prompt[0]
@@ -148,6 +149,7 @@ class TestDatasetProcessing:
 
         example = processed[0]
         prompt = example.get("prompt")
+        assert isinstance(prompt, list)
         assert len(prompt) == 1
 
         message = prompt[0]
@@ -493,6 +495,7 @@ class TestEdgeCases:
 
         example = processed[0]
         prompt = example.get("prompt")
+        assert isinstance(prompt, list)
         assert len(prompt) == 1
 
         message = prompt[0]
@@ -523,6 +526,7 @@ class TestEdgeCases:
         assert len(processed) == 1
         example = processed[0]
         prompt = example.get("prompt")
+        assert isinstance(prompt, list)
         assert len(prompt) == 1
 
         message = prompt[0]

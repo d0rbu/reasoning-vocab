@@ -26,7 +26,7 @@ from pathlib import Path
 
 import torch as th
 import transformers
-from datasets import Dataset, load_dataset
+from datasets import load_dataset
 from loguru import logger
 from transformers import AutoConfig, AutoTokenizer
 from trl.rewards import accuracy_reward

@@ -238,7 +238,9 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
         except StopIteration as e:
             raise ValueError("Dataset is empty") from e
 
-    format_example = get_format_example_fn(sample)
+    assert isinstance(sample, dict), "Sample must be a dictionary"
+
+    format_example = get_format_example_fn(cast(dict[str, Any], sample))
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
         return dataset.map(format_example)
