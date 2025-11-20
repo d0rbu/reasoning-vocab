@@ -207,12 +207,19 @@ marimo/_lsp/
 __marimo__/
 
 # Project-specific
-model/  # Model checkpoints
-data/   # Datasets
-out/    # Training outputs
-fig/    # Generated figures
+model/
+model/*
+data/
+data/*
+out/
+out/*
+outputs/
+outputs/*
+fig/
+fig/*
 *.pt
 *.pth
 *.ckpt
 *.safetensors
-wandb/  # Weights & Biases logs
+wandb/
+wandb/*

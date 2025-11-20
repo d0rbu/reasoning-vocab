@@ -1,13 +1,13 @@
 # Dataset configuration for DeepScaleR-Preview-Dataset
 
 # Dataset identifier from HuggingFace
-name: "agentica-org/DeepScaleR-Preview-Dataset"
+name: "trl-lib/DeepMath-103K"
 streaming: false
 ignore_sufficient_disk_space_check: false
 
 # Split configuration
 train_split: "train"
-val_split: null  # No validation split in this dataset
+val_split: "test"
 
 # Data sampling (for faster iteration)
 max_train_samples: null  # null means use all samples

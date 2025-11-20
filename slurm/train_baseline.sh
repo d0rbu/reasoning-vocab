@@ -41,6 +41,4 @@ source .venv/bin/activate
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 uv run accelerate launch --num_processes 2 \
     exp/grpo_train.py \
-    exp_name=baseline_run \
     model=monad \
-    model.reasoning_vocab_size=0
