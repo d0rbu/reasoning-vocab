@@ -363,7 +363,7 @@ def main():
     correct_count = 0
     truncated_count = 0
 
-    for idx, example in zip(range(args.num_samples), dataset):
+    for idx, example in zip(range(args.num_samples), dataset, strict=False):
         logger.info(f"Sample {idx + 1}/{args.num_samples}")
 
         # Format prompt and get ground truth
