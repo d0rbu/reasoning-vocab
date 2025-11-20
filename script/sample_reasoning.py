@@ -25,9 +25,9 @@ import json
 from pathlib import Path
 
 import torch as th
+import transformers
 from datasets import load_dataset
 from loguru import logger
-import transformers
 from transformers import AutoConfig, AutoTokenizer
 from trl.rewards import accuracy_reward
 
@@ -35,9 +35,7 @@ from core.reasoning_vocab_model import ReasoningVocabLogitsProcessor, get_reason
 from core.tokenizer_utils import ReasoningTokenizer
 
 
-def load_model_and_tokenizer(
-    checkpoint_path: str
-) -> tuple[th.nn.Module, ReasoningTokenizer]:
+def load_model_and_tokenizer(checkpoint_path: str) -> tuple[th.nn.Module, ReasoningTokenizer]:
     """
     Load a trained reasoning-vocab model and its tokenizer.
 
@@ -112,18 +110,24 @@ def format_prompt(example: dict, dataset_name: str, tokenizer: ReasoningTokenize
     """
     # GSM8K format
     if "gsm8k" in dataset_name.lower():
-        messages = [{"role": "user", "content": example['question']}]
-        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        messages = [{"role": "user", "content": example["question"]}]
+        return tokenizer.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
     # MATH format
     if "math" in dataset_name.lower():
-        messages = [{"role": "user", "content": example['problem']}]
-        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        messages = [{"role": "user", "content": example["problem"]}]
+        return tokenizer.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
     # Default format
     if "question" in example:
-        messages = [{"role": "user", "content": example['question']}]
-        return tokenizer.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        messages = [{"role": "user", "content": example["question"]}]
+        return tokenizer.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
 
     raise ValueError(f"Unknown dataset format for: {dataset_name}")
 
@@ -188,12 +192,14 @@ def generate_sample(
     # Create logits processor for reasoning vocabulary (if enabled)
     logits_processors = []
     if use_reasoning_logits_processor:
-        logits_processors.append(ReasoningVocabLogitsProcessor(
-            standard_vocab_size=model.standard_vocab_size,
-            tokenizer=tokenizer,
-            think_tag="<think>",
-            end_think_tag="</think>",
-        ))
+        logits_processors.append(
+            ReasoningVocabLogitsProcessor(
+                standard_vocab_size=model.standard_vocab_size,
+                tokenizer=tokenizer,
+                think_tag="<think>",
+                end_think_tag="</think>",
+            )
+        )
 
     # Generate
     with th.no_grad():
@@ -322,7 +328,7 @@ def main():
     parser.add_argument(
         "--use_reasoning_logits_processor",
         action="store_true",
-        help="Use reasoning logits processor during generation"
+        help="Use reasoning logits processor during generation",
     )
 
     args = parser.parse_args()

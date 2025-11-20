@@ -34,7 +34,9 @@ def mock_tokenizer():
     """Create a mock tokenizer for testing."""
     tokenizer = Mock()
     tokenizer.tokenizer = Mock()
-    tokenizer.tokenizer.apply_chat_template = Mock(return_value="<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n")
+    tokenizer.tokenizer.apply_chat_template = Mock(
+        return_value="<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
+    )
     return tokenizer
 
 
@@ -45,9 +47,9 @@ class TestPromptFormatting:
 
         # Verify the tokenizer's apply_chat_template was called with correct messages
         mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
-            [{"role": "user", "content": "What is 2+2?"}], 
-            tokenize=False, 
-            add_generation_prompt=True
+            [{"role": "user", "content": "What is 2+2?"}],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
@@ -57,9 +59,9 @@ class TestPromptFormatting:
 
         # Verify the tokenizer's apply_chat_template was called with correct messages
         mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
-            [{"role": "user", "content": "Solve x^2 = 4"}], 
-            tokenize=False, 
-            add_generation_prompt=True
+            [{"role": "user", "content": "Solve x^2 = 4"}],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
@@ -69,9 +71,9 @@ class TestPromptFormatting:
 
         # Verify the tokenizer's apply_chat_template was called with correct messages
         mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
-            [{"role": "user", "content": "How are you?"}], 
-            tokenize=False, 
-            add_generation_prompt=True
+            [{"role": "user", "content": "How are you?"}],
+            tokenize=False,
+            add_generation_prompt=True,
         )
         assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
