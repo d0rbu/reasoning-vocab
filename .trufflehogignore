@@ -1,0 +1,12 @@
+# Trufflehog ignore patterns
+# This file is used by the pre-push hook to skip scanning certain files
+
+# Lock files often contain hashes that trigger false positives
+uv\.lock
+
+# Package lock files
+package-lock\.json
+yarn\.lock
+poetry\.lock
+Pipfile\.lock
+
