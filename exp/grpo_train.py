@@ -357,16 +357,6 @@ def main(cfg: DictConfig):
     # Create GRPO config
     training_args = create_grpo_config(cfg)
 
-    # Create wrapper functions to match GRPOTrainer expected signature
-    def wrapped_accuracy_reward(completions, solutions):
-        """Wrapper for accuracy_reward to match expected signature."""
-        return accuracy_reward(completions, solutions)
-
-    def wrapped_think_format_reward(completions, solutions):
-        """Wrapper for think_format_reward to match expected signature."""
-        # think_format_reward only needs completions, ignore solutions param
-        return think_format_reward(completions)
-
     # Initialize trainer with TRL's reward functions
     logger.info("Initializing GRPOTrainer with accuracy_reward and think_format_reward...")
     trainer = GRPOTrainer(
@@ -374,7 +364,7 @@ def main(cfg: DictConfig):
         args=training_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
-        reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
+        reward_funcs=[accuracy_reward, think_format_reward],
     )
 
     # Save initial checkpoint (checkpoint-0) before training
