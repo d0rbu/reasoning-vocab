@@ -237,7 +237,7 @@ def generate_sample(
     # Generate
     with th.no_grad():
         # Type assertion to help mypy understand model.generate is callable
-        generate_fn = getattr(model, 'generate')
+        generate_fn = model.generate
         output_ids = generate_fn(
             input_ids,
             max_new_tokens=max_new_tokens,
