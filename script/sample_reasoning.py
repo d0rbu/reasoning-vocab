@@ -73,36 +73,6 @@ def load_model_and_tokenizer(checkpoint_path: str) -> tuple[th.nn.Module, Reason
     return model, reasoning_tokenizer
 
 
-def prepare_dataset(dataset_name: str, split: str, num_samples: int) -> Dataset:
-    """
-    Load and prepare a dataset for sampling.
-
-    Args:
-        dataset_name: HuggingFace dataset name (e.g., 'openai/gsm8k')
-        split: Dataset split to use (e.g., 'test', 'train')
-        num_samples: Number of samples to take
-
-    Returns:
-        Dataset subset
-    """
-    logger.info(f"Loading dataset: {dataset_name} (split: {split})")
-
-    dataset = load_dataset(dataset_name, split=split)
-    
-    # Ensure we have a Dataset type (not IterableDataset)
-    if hasattr(dataset, 'select') and hasattr(dataset, '__len__'):
-        # Type narrowing: assert that we have the right type
-        assert isinstance(dataset, Dataset), f"Expected Dataset, got {type(dataset)}"
-        
-        # Take only num_samples
-        if num_samples < len(dataset):
-            dataset = dataset.select(range(num_samples))
-        return dataset
-    else:
-        # Handle IterableDataset or other types
-        raise ValueError(f"Dataset {dataset_name} returned incompatible type. Expected Dataset with select() method.")
-
-
 def format_prompt(example: dict, dataset_name: str, tokenizer: ReasoningTokenizer) -> str:
     """
     Format a dataset example into a prompt.
@@ -384,7 +354,8 @@ def main():
     model, tokenizer = load_model_and_tokenizer(args.checkpoint)
 
     # Load dataset
-    dataset = prepare_dataset(args.dataset, args.dataset_split, args.num_samples)
+    logger.info(f"Loading dataset: {args.dataset} (split: {args.dataset_split})")
+    dataset = load_dataset(args.dataset, split=args.dataset_split)
 
     # Generate samples
     logger.info(f"Generating {args.num_samples} samples...")
@@ -392,7 +363,7 @@ def main():
     correct_count = 0
     truncated_count = 0
 
-    for idx, example in enumerate(dataset):
+    for idx, example in zip(range(args.num_samples), dataset):
         logger.info(f"Sample {idx + 1}/{args.num_samples}")
 
         # Format prompt and get ground truth
