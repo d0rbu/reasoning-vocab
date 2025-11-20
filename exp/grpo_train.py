@@ -228,7 +228,7 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
     Returns:
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
-    sample = dataset[0]
+    sample = next(iter(dataset))
     format_example = get_format_example_fn(sample)
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
