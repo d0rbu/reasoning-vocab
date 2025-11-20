@@ -237,9 +237,7 @@ def generate_sample(
 
     # Generate
     with th.no_grad():
-        # Type assertion to help TY understand model.generate is callable
-        generate_fn = getattr(model, 'generate')  # noqa: B009
-        output_ids = generate_fn(
+        output_ids = model.generate(
             input_ids,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
