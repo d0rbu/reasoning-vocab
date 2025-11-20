@@ -91,6 +91,9 @@ def prepare_dataset(dataset_name: str, split: str, num_samples: int) -> Dataset:
     
     # Ensure we have a Dataset type (not IterableDataset)
     if hasattr(dataset, 'select') and hasattr(dataset, '__len__'):
+        # Type narrowing: assert that we have the right type
+        assert isinstance(dataset, Dataset), f"Expected Dataset, got {type(dataset)}"
+        
         # Take only num_samples
         if num_samples < len(dataset):
             dataset = dataset.select(range(num_samples))
@@ -98,8 +101,6 @@ def prepare_dataset(dataset_name: str, split: str, num_samples: int) -> Dataset:
     else:
         # Handle IterableDataset or other types
         raise ValueError(f"Dataset {dataset_name} returned incompatible type. Expected Dataset with select() method.")
-
-    return dataset
 
 
 def format_prompt(example: dict, dataset_name: str, tokenizer: ReasoningTokenizer) -> str:
@@ -236,8 +237,8 @@ def generate_sample(
 
     # Generate
     with th.no_grad():
-        # Type assertion to help mypy understand model.generate is callable
-        generate_fn = getattr(model, 'generate')
+        # Type assertion to help TY understand model.generate is callable
+        generate_fn = getattr(model, 'generate')  # noqa: B009
         output_ids = generate_fn(
             input_ids,
             max_new_tokens=max_new_tokens,
