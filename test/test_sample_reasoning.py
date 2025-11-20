@@ -14,6 +14,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -28,36 +29,56 @@ format_prompt = sample_reasoning.format_prompt
 save_sample = sample_reasoning.save_sample
 
 
+@pytest.fixture
+def mock_tokenizer():
+    """Create a mock tokenizer for testing."""
+    tokenizer = Mock()
+    tokenizer.tokenizer = Mock()
+    tokenizer.tokenizer.apply_chat_template = Mock(return_value="<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n")
+    return tokenizer
+
+
 class TestPromptFormatting:
-    def test_gsm8k_format(self):
+    def test_gsm8k_format(self, mock_tokenizer):
         example = {"question": "What is 2+2?", "answer": "#### 4"}
-        prompt = format_prompt(example, "openai/gsm8k")
+        prompt = format_prompt(example, "openai/gsm8k", mock_tokenizer)
 
-        assert "What is 2+2?" in prompt
-        assert "<|im_start|>user" in prompt
-        assert "<|im_end|>" in prompt
-        assert "<|im_start|>assistant" in prompt
+        # Verify the tokenizer's apply_chat_template was called with correct messages
+        mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
+            [{"role": "user", "content": "What is 2+2?"}], 
+            tokenize=False, 
+            add_generation_prompt=True
+        )
+        assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
-    def test_math_format(self):
+    def test_math_format(self, mock_tokenizer):
         example = {"problem": "Solve x^2 = 4", "solution": "x = ±2"}
-        prompt = format_prompt(example, "hendrycks/math")
+        prompt = format_prompt(example, "hendrycks/math", mock_tokenizer)
 
-        assert "Solve x^2 = 4" in prompt
-        assert "<|im_start|>user" in prompt
-        assert "<|im_end|>" in prompt
-        assert "<|im_start|>assistant" in prompt
+        # Verify the tokenizer's apply_chat_template was called with correct messages
+        mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
+            [{"role": "user", "content": "Solve x^2 = 4"}], 
+            tokenize=False, 
+            add_generation_prompt=True
+        )
+        assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
-    def test_generic_format(self):
+    def test_generic_format(self, mock_tokenizer):
         example = {"question": "How are you?"}
-        prompt = format_prompt(example, "custom/dataset")
+        prompt = format_prompt(example, "custom/dataset", mock_tokenizer)
 
-        assert "How are you?" in prompt
-        assert "<|im_start|>" in prompt
+        # Verify the tokenizer's apply_chat_template was called with correct messages
+        mock_tokenizer.tokenizer.apply_chat_template.assert_called_once_with(
+            [{"role": "user", "content": "How are you?"}], 
+            tokenize=False, 
+            add_generation_prompt=True
+        )
+        assert prompt == "<|im_start|>user\nTest question<|im_end|>\n<|im_start|>assistant\n"
 
-    def test_unknown_format_raises(self):
+    def test_unknown_format_raises(self, mock_tokenizer):
         example = {"unknown_key": "value"}
         with pytest.raises(ValueError, match="Unknown dataset format"):
-            format_prompt(example, "unknown/dataset")
+            format_prompt(example, "unknown/dataset", mock_tokenizer)
 
 
 class TestAnswerExtraction:
