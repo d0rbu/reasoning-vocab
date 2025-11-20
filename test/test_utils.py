@@ -11,9 +11,18 @@ from typing import Any
 
 import pytest
 import torch as th
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from omegaconf import DictConfig, OmegaConf
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+__all__ = [
+    "create_tiny_model",
+    "create_tiny_tokenizer",
+    "assert_dataset_fields",
+    "assert_model_trainable",
+    "assert_tensor_shape",
+    "narrow_to_dataset",
+]
 
 
 @pytest.fixture
@@ -224,6 +233,30 @@ def assert_tensor_shape(tensor: th.Tensor, expected_shape: tuple[int, ...], name
     assert tensor.shape == expected_shape, (
         f"{name} shape mismatch: expected {expected_shape}, got {tensor.shape}"
     )
+
+
+def narrow_to_dataset(dataset: Dataset | IterableDataset | Any) -> Dataset:
+    """
+    Narrow dataset type to Dataset for type checker.
+
+    This function performs runtime type checking and returns a Dataset type
+    that the type checker understands.
+
+    Args:
+        dataset: Dataset that may be a union type
+
+    Returns:
+        Dataset with narrowed type
+
+    Raises:
+        TypeError: If dataset is not a Dataset instance
+    """
+    from datasets import Dataset as DatasetType
+
+    if not isinstance(dataset, DatasetType):
+        raise TypeError(f"Expected Dataset, got {type(dataset).__name__}")
+
+    return dataset
 
 
 def assert_dataset_fields(dataset: Dataset, required_fields: list[str]):
