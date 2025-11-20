@@ -237,7 +237,9 @@ def generate_sample(
 
     # Generate
     with th.no_grad():
-        output_ids = model.generate(
+        # Type narrowing: extract generate method for type checker
+        generate_fn = getattr(model, "generate")  # noqa: B009
+        output_ids = generate_fn(
             input_ids,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
