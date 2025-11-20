@@ -1,7 +1,7 @@
 # GRPO Training configuration
 
 # Training hyperparameters
-num_train_epochs: 4
+num_train_epochs: 1
 learning_rate: 5.0e-6
 per_device_train_batch_size: 16
 gradient_accumulation_steps: 8
