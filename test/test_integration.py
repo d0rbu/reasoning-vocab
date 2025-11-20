@@ -48,6 +48,7 @@ class TestEndToEndDataPipeline:
         assert len(processed) == len(sample_dataset)
 
         # Verify data integrity
+        example: dict
         for i, example in enumerate(processed):
             assert isinstance(example["prompt"], str)
             assert isinstance(example["answer"], str)
@@ -63,6 +64,7 @@ class TestEndToEndDataPipeline:
 
         # Process dataset
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
 
         # Take first example and tokenize
         prompt = processed[0]["prompt"]
@@ -152,13 +154,21 @@ class TestTrainerIntegration:
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
 
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+        
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
+
         # Initialize trainer
         trainer = GRPOTrainer(
             model=model,
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         # Verify trainer components
@@ -175,12 +185,16 @@ class TestTrainerIntegration:
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
         training_args = create_grpo_config(minimal_hydra_config)
 
+        # Wrap reward function to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+
         trainer = GRPOTrainer(
             model=model,
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward],
+            reward_funcs=[wrapped_accuracy_reward],
         )
 
         # Check that trainer has necessary attributes
@@ -303,7 +317,9 @@ class TestCheckpointingWorkflow:
             minimal_hydra_config.output_dir = tmpdir
             grpo_config = create_grpo_config(minimal_hydra_config)
 
-            output_path = Path(grpo_config.output_dir)
+            output_dir = grpo_config.output_dir
+            assert output_dir is not None, "output_dir should not be None"
+            output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
 
             assert output_path.exists()

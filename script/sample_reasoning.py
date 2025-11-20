@@ -26,7 +26,7 @@ from pathlib import Path
 
 import torch as th
 import transformers
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from loguru import logger
 from transformers import AutoConfig, AutoTokenizer
 from trl.rewards import accuracy_reward
@@ -73,7 +73,7 @@ def load_model_and_tokenizer(checkpoint_path: str) -> tuple[th.nn.Module, Reason
     return model, reasoning_tokenizer
 
 
-def prepare_dataset(dataset_name: str, split: str, num_samples: int):
+def prepare_dataset(dataset_name: str, split: str, num_samples: int) -> Dataset:
     """
     Load and prepare a dataset for sampling.
 
@@ -88,10 +88,16 @@ def prepare_dataset(dataset_name: str, split: str, num_samples: int):
     logger.info(f"Loading dataset: {dataset_name} (split: {split})")
 
     dataset = load_dataset(dataset_name, split=split)
-
-    # Take only num_samples
-    if num_samples < len(dataset):
-        dataset = dataset.select(range(num_samples))
+    
+    # Ensure we have a Dataset type (not IterableDataset)
+    if hasattr(dataset, 'select') and hasattr(dataset, '__len__'):
+        # Take only num_samples
+        if num_samples < len(dataset):
+            dataset = dataset.select(range(num_samples))
+        return dataset
+    else:
+        # Handle IterableDataset or other types
+        raise ValueError(f"Dataset {dataset_name} returned incompatible type. Expected Dataset with select() method.")
 
     return dataset
 
@@ -111,23 +117,29 @@ def format_prompt(example: dict, dataset_name: str, tokenizer: ReasoningTokenize
     # GSM8K format
     if "gsm8k" in dataset_name.lower():
         messages = [{"role": "user", "content": example["question"]}]
-        return tokenizer.tokenizer.apply_chat_template(
+        result = tokenizer.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        assert isinstance(result, str), "Chat template should return string when tokenize=False"
+        return result
 
     # MATH format
     if "math" in dataset_name.lower():
         messages = [{"role": "user", "content": example["problem"]}]
-        return tokenizer.tokenizer.apply_chat_template(
+        result = tokenizer.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        assert isinstance(result, str), "Chat template should return string when tokenize=False"
+        return result
 
     # Default format
     if "question" in example:
         messages = [{"role": "user", "content": example["question"]}]
-        return tokenizer.tokenizer.apply_chat_template(
+        result = tokenizer.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
+        assert isinstance(result, str), "Chat template should return string when tokenize=False"
+        return result
 
     raise ValueError(f"Unknown dataset format for: {dataset_name}")
 
@@ -187,14 +199,35 @@ def generate_sample(
         Tuple of (token_ids, decoded_text, multiplicities)
     """
     # Encode prompt
-    input_ids = tokenizer.encode(prompt, return_tensors="pt").to(model.device)
+    encoded_result = tokenizer.encode(prompt, return_tensors="pt")
+    if isinstance(encoded_result, th.Tensor):
+        # Get model device
+        model_device = next(model.parameters()).device
+        input_ids = encoded_result.to(model_device)
+    else:
+        # Get model device  
+        model_device = next(model.parameters()).device
+        input_ids = th.tensor(encoded_result, dtype=th.long).unsqueeze(0).to(model_device)
 
     # Create logits processor for reasoning vocabulary (if enabled)
     logits_processors = []
     if use_reasoning_logits_processor:
+        # Get standard vocab size as int
+        if hasattr(model, 'standard_vocab_size'):
+            std_vocab_size_attr = model.standard_vocab_size
+            if isinstance(std_vocab_size_attr, th.Tensor):
+                std_vocab_size = int(std_vocab_size_attr.item())
+            elif isinstance(std_vocab_size_attr, (int, float)):
+                std_vocab_size = int(std_vocab_size_attr)
+            else:
+                # Fallback to tokenizer
+                std_vocab_size = tokenizer.standard_vocab_size
+        else:
+            std_vocab_size = tokenizer.standard_vocab_size
+            
         logits_processors.append(
             ReasoningVocabLogitsProcessor(
-                standard_vocab_size=model.standard_vocab_size,
+                standard_vocab_size=std_vocab_size,
                 tokenizer=tokenizer,
                 think_tag="<think>",
                 end_think_tag="</think>",
@@ -203,7 +236,9 @@ def generate_sample(
 
     # Generate
     with th.no_grad():
-        output_ids = model.generate(
+        # Type assertion to help mypy understand model.generate is callable
+        generate_fn = getattr(model, 'generate')
+        output_ids = generate_fn(
             input_ids,
             max_new_tokens=max_new_tokens,
             temperature=temperature,
@@ -238,13 +273,15 @@ def check_correctness(generated_text: str, ground_truth: str, dataset_name: str)
     """
     # Use TRL's accuracy reward function
     try:
-        # Format as completion for accuracy_reward
+        # Format as completion for accuracy_reward - function takes (completions, solution)
         completions = [[{"role": "assistant", "content": generated_text}]]
-        prompts = [[{"role": "user", "content": ""}]]  # Dummy prompt
-        references = [[{"role": "assistant", "content": ground_truth}]]
+        solution = [ground_truth]  # List of strings
 
-        rewards = accuracy_reward(completions, prompts, references)
-        return float(rewards[0]) > 0.5
+        rewards = accuracy_reward(completions, solution)
+        if rewards and rewards[0] is not None:
+            return float(rewards[0]) > 0.5
+        else:
+            return False
     except Exception as e:
         logger.warning(f"Error checking correctness: {e}")
         # Fallback: simple string matching

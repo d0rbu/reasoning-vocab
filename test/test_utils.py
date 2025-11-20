@@ -188,7 +188,10 @@ def create_tiny_model(model_name: str | None = None, device: str = "cpu"):
         torch_dtype=th.float32,
         trust_remote_code=False,
     )
-    model = model.to(device)
+    # Move model to device - use getattr to avoid type checker issues
+    device_obj = th.device(device)
+    to_method = getattr(model, 'to')
+    model = to_method(device_obj)
     model.eval()
 
     return model

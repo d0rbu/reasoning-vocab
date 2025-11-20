@@ -22,7 +22,6 @@ def test_dependencies_importable():
     import torch
     import transformers
     import trl
-
     import wandb
 
     assert hydra is not None

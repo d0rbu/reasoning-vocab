@@ -109,6 +109,7 @@ class TestDatasetProcessing:
         tokenizer = create_tiny_tokenizer()
         dataset = Dataset.from_list(sample_dataset_dict)
         processed = preprocess_dataset(dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
 
         # Check first example
         assert "What is 2 + 2?" in processed[0]["prompt"]
@@ -128,6 +129,7 @@ class TestDatasetProcessing:
             )
 
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
 
         # Verify prompt is a string and non-empty
         assert isinstance(processed[0]["prompt"], str)
@@ -321,13 +323,21 @@ class TestTrainingExecution:
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
 
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+        
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
+
         # Initialize trainer
         trainer = GRPOTrainer(
             model=model,
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         assert isinstance(trainer, GRPOTrainer)
@@ -350,13 +360,21 @@ class TestTrainingExecution:
         minimal_hydra_config.training.save_steps = 999999  # Don't save checkpoints
         training_args = create_grpo_config(minimal_hydra_config)
 
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+        
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
+
         # Initialize trainer
         trainer = GRPOTrainer(
             model=model,
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         # Run one training step (or very short training)
@@ -437,6 +455,7 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
 
         # Should not crash and should produce a prompt
         assert len(processed) == 1
