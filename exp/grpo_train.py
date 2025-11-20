@@ -229,7 +229,15 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
     Returns:
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
-    sample = next(iter(dataset))
+    if isinstance(dataset, Dataset | DatasetDict):
+        assert len(dataset) > 0, "Dataset is empty"
+        sample = dataset[0]
+    else:
+        try:
+            sample = next(iter(dataset))
+        except StopIteration as e:
+            raise ValueError("Dataset is empty") from e
+
     format_example = get_format_example_fn(sample)
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
