@@ -17,7 +17,6 @@ import datasets.builder
 import hydra
 import torch as th
 import transformers
-import wandb
 from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
@@ -30,6 +29,7 @@ from transformers import (
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
 
+import wandb
 from core.reasoning_vocab_model import (
     ReasoningVocabModel,
     get_reasoning_class,
@@ -146,6 +146,77 @@ def load_model_and_tokenizer(cfg: DictConfig) -> tuple[PreTrainedModel, PreTrain
     return model, tokenizer
 
 
+PROBLEM_KEY_CANDIDATES = [
+    "problem",
+    "question",
+    "prompt",
+]
+ANSWER_KEY_CANDIDATES = [
+    "answer",
+    "solution",
+    "response",
+    "output",
+]
+
+
+def get_format_example_fn(sample: dict[str, Any]):
+    """
+    Analyze a dataset sample and return the appropriate format function.
+
+    Args:
+        sample: A single example from the dataset
+
+    Returns:
+        A format function that converts dataset examples to the required format
+        with 'prompt' (conversational format) and 'solution' (string) fields
+
+    Raises:
+        AssertionError: If the sample format is invalid
+        ValueError: If the problem key type is not supported
+    """
+    problem_key = next((key for key in PROBLEM_KEY_CANDIDATES if key in sample), None)
+    answer_key = next((key for key in ANSWER_KEY_CANDIDATES if key in sample), None)
+    assert problem_key is not None and answer_key is not None, (
+        f"Could not find problem or answer key in sample: {sample}"
+    )
+    assert isinstance(sample[answer_key], str), (
+        f"{answer_key} must be a string, got {type(sample[answer_key])}: {sample[answer_key]}"
+    )
+
+    if isinstance(sample[problem_key], list):
+        # Conversational format - validate structure
+        assert len(sample[problem_key]) == 1, (
+            f"Got conversational format for {problem_key}, but found multiple messages: {sample[problem_key]}"
+        )
+        sample_message = sample[problem_key][0]
+        assert "role" in sample_message and "content" in sample_message, (
+            f"Got conversational format for {problem_key}, but found invalid message: {sample_message}"
+        )
+        assert sample_message["role"] == "user", (
+            f"Got conversational format for {problem_key}, but found invalid role: {sample_message}"
+        )
+
+        def format_example(
+            example: dict[str, list[dict[str, str]] | str],
+        ) -> dict[str, list[dict[str, str]] | str]:
+            return {"prompt": example[problem_key], "solution": example[answer_key]}
+
+    elif isinstance(sample[problem_key], str):
+        # String format - convert to conversational format
+        def format_example(example: dict[str, str]) -> dict[str, list[dict[str, str]] | str]:
+            prompt = [
+                {"role": "user", "content": example[problem_key]},
+            ]
+            return {"prompt": prompt, "solution": example[answer_key]}
+
+    else:
+        raise ValueError(
+            f"Got invalid format for {problem_key} ({type(sample[problem_key])}): {sample[problem_key]}"
+        )
+
+    return format_example
+
+
 def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> DatasetType:
     """
     Preprocess dataset into conversational format using chat template.
@@ -157,14 +228,8 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
     Returns:
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
-
-    def format_example(example: dict[str, Any]) -> dict[str, list[dict[str, str]] | str]:
-        # Create messages in chat format (no system prompt)
-        prompt = [
-            {"role": "user", "content": str(example["problem"])},
-        ]
-
-        return {"prompt": prompt, "solution": str(example["answer"])}
+    sample = dataset[0]
+    format_example = get_format_example_fn(sample)
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
         return dataset.map(format_example)

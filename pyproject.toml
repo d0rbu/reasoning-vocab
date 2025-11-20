@@ -23,6 +23,7 @@ dependencies = [
     "math-verify>=0.8.0",
     "scikit-learn>=1.3.0",
     "jaxtyping>=0.3.3",
+    "nvitop>=1.6.0",
 ]
 
 [project.optional-dependencies]
