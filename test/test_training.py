@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import torch as th
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from omegaconf import DictConfig
 from transformers import PreTrainedModel, PreTrainedTokenizer
 from trl import GRPOConfig, GRPOTrainer
@@ -34,6 +34,7 @@ from test.test_utils import (
     assert_dataset_fields,
     create_tiny_model,
     create_tiny_tokenizer,
+    narrow_to_dataset,
 )
 
 
@@ -97,6 +98,7 @@ class TestDatasetProcessing:
         """Test that preprocess_dataset creates correct fields."""
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Check that required fields exist
         assert_dataset_fields(processed, ["prompt", "answer"])
@@ -109,9 +111,23 @@ class TestDatasetProcessing:
         tokenizer = create_tiny_tokenizer()
         dataset = Dataset.from_list(sample_dataset_dict)
         processed = preprocess_dataset(dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
-        # Check first example
-        assert "What is 2 + 2?" in processed[0]["prompt"]
+        example = processed[0]
+        prompt = example.get("prompt")
+
+        assert isinstance(prompt, list)
+        assert len(prompt) == 1
+
+        message = prompt[0]
+        content = message.get("content")
+        role = message.get("role")
+
+        assert isinstance(content, str)
+        assert isinstance(role, str)
+        assert role == "user"
+        assert "What is 2 + 2?" in content
         assert processed[0]["answer"] == "4"
 
     def test_preprocess_dataset_chat_template(self, sample_dataset: Dataset):
@@ -128,10 +144,21 @@ class TestDatasetProcessing:
             )
 
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
-        # Verify prompt is a string and non-empty
-        assert isinstance(processed[0]["prompt"], str)
-        assert len(processed[0]["prompt"]) > 0
+        example = processed[0]
+        prompt = example.get("prompt")
+        assert isinstance(prompt, list)
+        assert len(prompt) == 1
+
+        message = prompt[0]
+        content = message.get("content")
+        role = message.get("role")
+
+        assert isinstance(content, str)
+        assert isinstance(role, str)
+        assert role == "user"
 
     @pytest.mark.skip(reason="Requires internet access to load dataset")
     def test_load_and_prepare_dataset(self, minimal_hydra_config: DictConfig):
@@ -154,6 +181,8 @@ class TestDatasetProcessing:
         assert len(subsampled) == max_samples
 
         processed = preprocess_dataset(subsampled, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
+
         assert len(processed) == max_samples
 
 
@@ -196,8 +225,8 @@ class TestModelLoading:
 
         # Pad token should be set (either by tokenizer or our code)
         assert tokenizer.pad_token is not None
-        assert tokenizer.pad_token == tokenizer.eos_token
-        assert model.config.pad_token_id == tokenizer.eos_token_id
+        assert model.config.pad_token_id == tokenizer.pad_token_id
+        assert model.config.eos_token_id == tokenizer.eos_token_id
 
 
 class TestRewardFunctions:
@@ -318,8 +347,21 @@ class TestTrainingExecution:
         # Preprocess dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
 
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), (
+            f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
+        )
+
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
+
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
 
         # Initialize trainer
         trainer = GRPOTrainer(
@@ -327,7 +369,7 @@ class TestTrainingExecution:
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         assert isinstance(trainer, GRPOTrainer)
@@ -345,10 +387,23 @@ class TestTrainingExecution:
         # Preprocess dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
 
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), (
+            f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
+        )
+
         # Create minimal GRPO config for fast training
         minimal_hydra_config.training.num_train_epochs = 1
         minimal_hydra_config.training.save_steps = 999999  # Don't save checkpoints
         training_args = create_grpo_config(minimal_hydra_config)
+
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
 
         # Initialize trainer
         trainer = GRPOTrainer(
@@ -356,7 +411,7 @@ class TestTrainingExecution:
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         # Run one training step (or very short training)
@@ -414,13 +469,8 @@ class TestEdgeCases:
         empty_dataset = Dataset.from_list([])
         tokenizer = create_tiny_tokenizer()
 
-        processed = preprocess_dataset(empty_dataset, tokenizer)
-
-        assert len(processed) == 0
-        # Empty dataset should still have the column structure after mapping
-        # But columns may not exist if the dataset is empty
-        if len(processed) > 0:
-            assert_dataset_fields(processed, ["prompt", "answer"])
+        with pytest.raises(AssertionError, match="Dataset is empty"):
+            preprocess_dataset(empty_dataset, tokenizer)
 
     def test_very_long_input(self, minimal_hydra_config: DictConfig):
         """Test handling of very long input sequences."""
@@ -437,10 +487,24 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Should not crash and should produce a prompt
         assert len(processed) == 1
-        assert isinstance(processed[0]["prompt"], str)
+
+        example = processed[0]
+        prompt = example.get("prompt")
+        assert isinstance(prompt, list)
+        assert len(prompt) == 1
+
+        message = prompt[0]
+        content = message.get("content")
+        role = message.get("role")
+        assert isinstance(content, str)
+        assert isinstance(role, str)
+        assert role == "user"
+        assert "What is " + " + ".join(["1"] * 1000) + "?" in content
 
     def test_special_characters_in_data(self):
         """Test handling of special characters in dataset."""
@@ -456,10 +520,22 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(special_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         # Should handle special characters without crashing
         assert len(processed) == 1
-        assert isinstance(processed[0]["prompt"], str)
+        example = processed[0]
+        prompt = example.get("prompt")
+        assert isinstance(prompt, list)
+        assert len(prompt) == 1
+
+        message = prompt[0]
+        content = message.get("content")
+        role = message.get("role")
+        assert isinstance(content, str)
+        assert isinstance(role, str)
+        assert role == "user"
+        assert "Calculate: <tag> & \"quotes\" 'apostrophes'" in content
 
     def test_unicode_in_data(self):
         """Test handling of Unicode characters."""
@@ -475,6 +551,7 @@ class TestEdgeCases:
 
         tokenizer = create_tiny_tokenizer()
         processed = preprocess_dataset(unicode_dataset, tokenizer)
+        processed = narrow_to_dataset(processed)  # Type narrowing for TY type checker
 
         assert len(processed) == 1
         assert "π" in processed[0]["problem"] or "π" in str(processed[0])

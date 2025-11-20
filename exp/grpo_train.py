@@ -28,6 +28,7 @@ from transformers import (
 )
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
+from trl.trainer.grpo_trainer import RewardFunc
 
 import wandb
 from core.reasoning_vocab_model import (
@@ -228,8 +229,18 @@ def preprocess_dataset(dataset: DatasetType, tokenizer: PreTrainedTokenizer) -> 
     Returns:
         Preprocessed dataset with 'prompt' and 'answer' fields
     """
-    sample = next(iter(dataset))
-    format_example = get_format_example_fn(sample)
+    if isinstance(dataset, Dataset | DatasetDict):
+        assert len(dataset) > 0, "Dataset is empty"
+        sample = dataset[0]
+    else:
+        try:
+            sample = next(iter(dataset))
+        except StopIteration as e:
+            raise ValueError("Dataset is empty") from e
+
+    assert isinstance(sample, dict), "Sample must be a dictionary"
+
+    format_example = get_format_example_fn(cast(dict[str, Any], sample))
 
     if isinstance(dataset, IterableDataset | IterableDatasetDict):
         return dataset.map(format_example)
@@ -364,7 +375,7 @@ def main(cfg: DictConfig):
         args=training_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
-        reward_funcs=[accuracy_reward, think_format_reward],
+        reward_funcs=cast(list[RewardFunc], [accuracy_reward, think_format_reward]),
     )
 
     # Save initial checkpoint (checkpoint-0) before training

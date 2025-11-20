@@ -11,8 +11,9 @@ These tests verify that different components work together correctly:
 import tempfile
 from pathlib import Path
 
+import pytest
 import torch as th
-from datasets import Dataset
+from datasets import Dataset, IterableDataset
 from omegaconf import DictConfig
 from trl import GRPOTrainer
 from trl.rewards import accuracy_reward, think_format_reward
@@ -43,15 +44,27 @@ class TestEndToEndDataPipeline:
         # Process dataset
         processed = preprocess_dataset(sample_dataset, tokenizer)
 
+        # Type narrowing for TY type checker
+        assert isinstance(processed, Dataset), f"Expected Dataset, got {type(processed)}"
+
         # Verify transformation
         assert_dataset_fields(processed, ["prompt", "answer"])
         assert len(processed) == len(sample_dataset)
 
         # Verify data integrity
+        example: dict
         for i, example in enumerate(processed):
-            assert isinstance(example["prompt"], str)
+            assert isinstance(example["prompt"], list)
+            assert len(example["prompt"]) == 1
+
+            message = example["prompt"][0]
+            content = message.get("content")
+            role = message.get("role")
+            assert isinstance(content, str)
+            assert isinstance(role, str)
+            assert role == "user"
+
             assert isinstance(example["answer"], str)
-            assert len(example["prompt"]) > 0
             # Original problem should be reflected in prompt
             original_problem = sample_dataset[i]["problem"]
             assert original_problem in str(example)
@@ -63,10 +76,17 @@ class TestEndToEndDataPipeline:
 
         # Process dataset
         processed = preprocess_dataset(sample_dataset, tokenizer)
+        assert processed is not None, "preprocess_dataset should not return None"
+
+        # Type narrowing for TY type checker
+        assert isinstance(processed, Dataset), f"Expected Dataset, got {type(processed)}"
 
         # Take first example and tokenize
         prompt = processed[0]["prompt"]
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=128)
+        templated_prompt = tokenizer.apply_chat_template(
+            prompt, tokenize=False, add_generation_prompt=True
+        )
+        inputs = tokenizer(templated_prompt, return_tensors="pt", truncation=True, max_length=128)
 
         # Run through model
         with th.no_grad():
@@ -149,8 +169,21 @@ class TestTrainerIntegration:
         # Process dataset
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
 
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), (
+            f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
+        )
+
         # Create GRPO config
         training_args = create_grpo_config(minimal_hydra_config)
+
+        # Wrap reward functions to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
+
+        def wrapped_think_format_reward(completions, solutions):
+            # think_format_reward only needs completions, ignore solutions
+            return think_format_reward(completions)
 
         # Initialize trainer
         trainer = GRPOTrainer(
@@ -158,7 +191,7 @@ class TestTrainerIntegration:
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward, think_format_reward],
+            reward_funcs=[wrapped_accuracy_reward, wrapped_think_format_reward],
         )
 
         # Verify trainer components
@@ -173,14 +206,24 @@ class TestTrainerIntegration:
         model = create_tiny_model()
         tokenizer = create_tiny_tokenizer()
         processed_dataset = preprocess_dataset(sample_dataset, tokenizer)
+
+        # Type narrowing for TY type checker
+        assert isinstance(processed_dataset, (Dataset, IterableDataset)), (
+            f"Expected Dataset or IterableDataset, got {type(processed_dataset)}"
+        )
+
         training_args = create_grpo_config(minimal_hydra_config)
+
+        # Wrap reward function to match expected signature
+        def wrapped_accuracy_reward(completions, solutions):
+            return accuracy_reward(completions, solutions)
 
         trainer = GRPOTrainer(
             model=model,
             args=training_args,
             train_dataset=processed_dataset,
             processing_class=tokenizer,
-            reward_funcs=[accuracy_reward],
+            reward_funcs=[wrapped_accuracy_reward],
         )
 
         # Check that trainer has necessary attributes
@@ -303,7 +346,9 @@ class TestCheckpointingWorkflow:
             minimal_hydra_config.output_dir = tmpdir
             grpo_config = create_grpo_config(minimal_hydra_config)
 
-            output_path = Path(grpo_config.output_dir)
+            output_dir = grpo_config.output_dir
+            assert output_dir is not None, "output_dir should not be None"
+            output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
 
             assert output_path.exists()
@@ -326,12 +371,8 @@ class TestErrorHandling:
         empty_dataset = Dataset.from_list([])
         tokenizer = create_tiny_tokenizer()
 
-        processed = preprocess_dataset(empty_dataset, tokenizer)
-
-        assert len(processed) == 0
-        # Empty datasets may not have column structure
-        if len(processed) > 0:
-            assert_dataset_fields(processed, ["prompt", "answer"])
+        with pytest.raises(AssertionError, match="Dataset is empty"):
+            preprocess_dataset(empty_dataset, tokenizer)
 
     def test_invalid_config_values(self, minimal_hydra_config: DictConfig):
         """Test handling of potentially invalid config values."""
