@@ -2097,7 +2097,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.0.0" },
     { name = "tqdm", specifier = ">=4.66.0" },
     { name = "transformers", specifier = ">=4.40.0" },
-    { name = "trl", git = "https://github.com/d0rbu/trl.git" },
+    { name = "trl", specifier = ">=0.8.0" },
     { name = "wandb", specifier = ">=0.16.0" },
 ]
 provides-extras = ["dev"]
@@ -2447,12 +2447,16 @@ wheels = [
 
 [[package]]
 name = "trl"
-version = "0.26.0.dev0"
-source = { git = "https://github.com/d0rbu/trl.git#e5cbfe8516633dd3f5757fecc10268efe4ed637d" }
+version = "0.25.1"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "accelerate" },
     { name = "datasets" },
     { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/69/77/351cb85122c0eb9d14f0bf613b42e6868d8bb9347bd0f9c73ac27453a864/trl-0.25.1.tar.gz", hash = "sha256:451f0cc9146aadb46f3a755a5375668869dd93c57e936f7070a92145eb2333c7", size = 406597, upload-time = "2025-11-12T16:49:46.556Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/6b/bece2a5bf3216493c6fc1c5003b2654719ccb635bcabd4049da5a5caaa3e/trl-0.25.1-py3-none-any.whl", hash = "sha256:4983310e7cf7b126f46b9cf2a4006ea160f52d9627230efe74e498211039c0c7", size = 465497, upload-time = "2025-11-12T16:49:44.945Z" },
 ]
 
 [[package]]
