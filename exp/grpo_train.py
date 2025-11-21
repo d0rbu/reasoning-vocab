@@ -329,6 +329,9 @@ def create_grpo_config(cfg: DictConfig) -> GRPOConfig:
     )
 
 
+TOKEN_TYPE_IDS_NAME = "token_type_ids"
+
+
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg: DictConfig):
     """
@@ -378,9 +381,12 @@ def main(cfg: DictConfig):
         reward_funcs=cast(list[RewardFunc], [accuracy_reward, think_format_reward]),
     )
 
-    token_type_ids = trainer.processing_class.model_input_names.pop("token_type_ids", None)
-    if token_type_ids is not None:
-        logger.trace(f"Removed token_type_ids from model input names: {token_type_ids}")
+    if TOKEN_TYPE_IDS_NAME in trainer.processing_class.model_input_names:
+        token_type_ids_idx = trainer.processing_class.model_input_names.index(TOKEN_TYPE_IDS_NAME)
+        trainer.processing_class.model_input_names.pop(token_type_ids_idx)
+        logger.trace(f"Removed token_type_ids from model input names: {token_type_ids_idx}")
+    else:
+        logger.trace("No token type IDs found in model input names")
 
     # Save initial checkpoint (checkpoint-0) before training
     # This serves as the baseline for visualization, showing the initialized model
