@@ -10,7 +10,7 @@ generation_batch_size: 8
 
 # GRPO-specific parameters
 num_generations: 8  # Number of generations per prompt for GRPO
-max_prompt_length: 2048
+max_prompt_length: 1024
 max_completion_length: 8192
 
 # Optimization
