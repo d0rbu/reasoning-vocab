@@ -9,7 +9,7 @@ effective_batch_size: 128  # per_device * gradient_accum * num_devices
 
 # GRPO-specific parameters
 num_generations: 8  # Number of generations per prompt for GRPO
-max_prompt_length: 1024
+max_prompt_length: 32768
 max_completion_length: 8192
 
 # Optimization
