@@ -1,0 +1,21 @@
+# Model configuration for PleIAs/Baguettotron with optional reasoning vocabulary
+
+# Model identifier from HuggingFace
+name: "PleIAs/Baguettotron"
+
+# Reasoning vocabulary settings
+reasoning_vocab_size: 0  # 0 means baseline (no reasoning vocab), set to >0 to enable
+
+# Model loading arguments
+model_kwargs:
+  torch_dtype: "bfloat16"  # float32, float16, bfloat16
+  trust_remote_code: true
+  load_in_8bit: false
+  load_in_4bit: false
+
+# Generation arguments
+generation_kwargs:
+  max_new_tokens: 4096
+  temperature: 0.6
+  do_sample: true
+
