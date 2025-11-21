@@ -3,14 +3,15 @@
 # Training hyperparameters
 num_train_epochs: 1
 learning_rate: 5.0e-6
-per_device_train_batch_size: 9
-gradient_accumulation_steps: 14
-effective_batch_size: 126  # per_device * gradient_accum * num_devices
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 16
+effective_batch_size: 128  # per_device * gradient_accum * num_devices
+generation_batch_size: 1
 
 # GRPO-specific parameters
-num_generations: 6  # Number of generations per prompt for GRPO
-max_prompt_length: 2048
-max_completion_length: 2048
+num_generations: 8  # Number of generations per prompt for GRPO
+max_prompt_length: 1024
+max_completion_length: 1024
 
 # Optimization
 optimizer: "adamw_torch"
@@ -32,7 +33,7 @@ bf16: true  # Use bfloat16 if available
 fp16: false
 
 # Gradient checkpointing for memory efficiency
-gradient_checkpointing: false
+gradient_checkpointing: true
 
 # Other settings
 dataloader_num_workers: 4
