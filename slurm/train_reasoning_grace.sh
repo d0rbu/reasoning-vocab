@@ -40,9 +40,10 @@ source .venv/bin/activate
 # For Qwen3-0.6B, vocab_size is approximately 151646
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-uv run accelerate launch --num_processes 4 \
+uv run accelerate launch \
+    --num_processes 2 \
+    --num_machines 2 \
     exp/grpo_train.py \
     exp_name=reasoning_vocab_run \
     model=baguettotron \
     model.reasoning_vocab_size=65536
-    # --num_machines 2 \

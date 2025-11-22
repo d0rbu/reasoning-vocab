@@ -40,5 +40,6 @@ source .venv/bin/activate
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 uv run accelerate launch \
+    --num_processes 2 \
     exp/grpo_train.py \
     model=baguettotron
