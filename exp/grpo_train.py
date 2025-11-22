@@ -27,7 +27,7 @@ from transformers import (
     PreTrainedTokenizer,
 )
 from trl import GRPOConfig, GRPOTrainer
-from trl.rewards import accuracy_reward, think_format_reward
+from trl.rewards import accuracy_reward
 from trl.trainer.grpo_trainer import RewardFunc
 
 import wandb
@@ -372,13 +372,13 @@ def main(cfg: DictConfig):
     training_args = create_grpo_config(cfg)
 
     # Initialize trainer with TRL's reward functions
-    logger.info("Initializing GRPOTrainer with accuracy_reward and think_format_reward...")
+    logger.info("Initializing GRPOTrainer with accuracy_reward...")
     trainer = GRPOTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         processing_class=tokenizer,
-        reward_funcs=cast(list[RewardFunc], [accuracy_reward, think_format_reward]),
+        reward_funcs=cast(list[RewardFunc], [accuracy_reward]),
     )
 
     if TOKEN_TYPE_IDS_NAME in trainer.processing_class.model_input_names:
