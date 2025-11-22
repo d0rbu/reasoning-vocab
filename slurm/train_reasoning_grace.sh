@@ -3,13 +3,13 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-reasoning
 #SBATCH --time=48:00:00
-#SBATCH --ntasks=2
+#SBATCH --ntasks=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --output=reasoning-%j
 #SBATCH --error=reasoning-%j.err
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a100:4
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -41,8 +41,8 @@ source .venv/bin/activate
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 uv run accelerate launch --num_processes 4 \
-    --num_machines 2 \
     exp/grpo_train.py \
     exp_name=reasoning_vocab_run \
     model=baguettotron \
     model.reasoning_vocab_size=65536
+    # --num_machines 2 \
