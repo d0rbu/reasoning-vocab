@@ -26,7 +26,7 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizer,
 )
-from trl import GRPOConfig, GRPOTrainer
+from trl import TRAINER_STATE_NAME, GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward
 from trl.trainer.grpo_trainer import RewardFunc
 
@@ -362,7 +362,21 @@ def main(cfg: DictConfig):
         f"Train dataset must be a Dataset or IterableDataset object, got {type(train_dataset)}"
     )
 
-    checkpoint_exists = os.path.exists(cfg.output_dir)
+    checkpoint_exists = False
+
+    training_dir_exists = os.path.exists(cfg.output_dir)
+    if training_dir_exists:
+        checkpoint_candidates = os.listdir(cfg.output_dir)
+        for checkpoint_candidate in checkpoint_candidates:
+            if not os.path.isdir(os.path.join(cfg.output_dir, checkpoint_candidate)):
+                continue
+
+            if os.path.exists(
+                os.path.join(cfg.output_dir, checkpoint_candidate, TRAINER_STATE_NAME)
+            ):
+                checkpoint_exists = True
+                break
+
     if checkpoint_exists:
         logger.info(f"Checkpoint exists at {cfg.output_dir}. Resuming training...")
     else:
@@ -393,7 +407,7 @@ def main(cfg: DictConfig):
     # with reasoning vocabulary but no training
     checkpoint_0_path = Path(cfg.output_dir) / "checkpoint-0"
     logger.debug(f"Saving initial checkpoint to {checkpoint_0_path}")
-    trainer._save_checkpoint(model, cfg.exp_name)
+    trainer.save_model(str(checkpoint_0_path))
 
     # Save reasoning token map for checkpoint-0
     assert isinstance(model, ReasoningVocabModel), (
