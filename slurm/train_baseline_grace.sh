@@ -3,8 +3,8 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
 #SBATCH --time=48:00:00
-#SBATCH --ntasks=4
-#SBATCH --ntasks-per-node=2
+#SBATCH --ntasks=2
+#SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --output=baseline-%j
@@ -39,6 +39,14 @@ source .venv/bin/activate
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-srun uv run exp/grpo_train.py \
+# bruh 3 launchers lmao
+srun uv run accelerate launch exp/grpo_train.py \
+    --num_processes 4 \
+    --num_machines 2 \
+    --main_process_ip $MASTER_ADDR \
+    --main_process_port $MASTER_PORT \
+    --machine_rank $RANK \
+    --world_size $WORLD_SIZE \
+    --rdzv_backend c10d \
     model=baguettotron \
     training=grpo_baguettotron
