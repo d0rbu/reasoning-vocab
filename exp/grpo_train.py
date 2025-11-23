@@ -26,7 +26,7 @@ from transformers import (
     PreTrainedModel,
     PreTrainedTokenizer,
 )
-from trl import TRAINER_STATE_NAME, GRPOConfig, GRPOTrainer
+from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward
 from trl.trainer.grpo_trainer import RewardFunc
 
@@ -330,6 +330,7 @@ def create_grpo_config(cfg: DictConfig) -> GRPOConfig:
 
 
 TOKEN_TYPE_IDS_NAME = "token_type_ids"
+TRAINER_STATE_NAME = "trainer_state.json"
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
