@@ -42,6 +42,10 @@ source .venv/bin/activate
 uv run accelerate launch \
     --num_processes 2 \
     --num_machines 2 \
+    --machine_rank $RANK \
+    --main_process_ip $MASTER_ADDR \
+    --main_process_port $MASTER_PORT \
+    --multi-gpu true \
     exp/grpo_train.py \
     model=baguettotron \
     training=grpo_baguettotron
