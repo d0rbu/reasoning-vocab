@@ -393,7 +393,7 @@ def main(cfg: DictConfig):
     # with reasoning vocabulary but no training
     checkpoint_0_path = Path(cfg.output_dir) / "checkpoint-0"
     logger.debug(f"Saving initial checkpoint to {checkpoint_0_path}")
-    trainer.save_model(str(checkpoint_0_path))
+    trainer._save_checkpoint(model, cfg.exp_name)
 
     # Save reasoning token map for checkpoint-0
     assert isinstance(model, ReasoningVocabModel), (
