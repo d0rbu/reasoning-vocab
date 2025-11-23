@@ -44,4 +44,5 @@ uv run accelerate launch --num_processes 4 \
     exp/grpo_train.py \
     exp_name=reasoning_vocab_run \
     model=baguettotron \
-    model.reasoning_vocab_size=65536
+    model.reasoning_vocab_size=65536 \
+    training=grpo_baguettotron
