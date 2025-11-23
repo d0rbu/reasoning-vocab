@@ -39,13 +39,12 @@ source .venv/bin/activate
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-uv run accelerate launch \
-    --num_processes 2 \
+srun uv run accelerate launch \
+    --num_processes 4 \
     --num_machines 2 \
     --machine_rank $RANK \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
-    --multi-gpu true \
     exp/grpo_train.py \
     model=baguettotron \
     training=grpo_baguettotron
