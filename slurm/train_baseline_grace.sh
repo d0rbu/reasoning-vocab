@@ -46,7 +46,6 @@ srun uv run accelerate launch exp/grpo_train.py \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
-    --world_size $WORLD_SIZE \
     --rdzv_backend c10d \
     model=baguettotron \
     training=grpo_baguettotron
