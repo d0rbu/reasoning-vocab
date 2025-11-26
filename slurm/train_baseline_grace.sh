@@ -41,6 +41,7 @@ source .venv/bin/activate
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 # bruh 3 launchers lmao
 srun uv run accelerate launch \
+    --multi_gpu \
     --num_processes 8 \
     --num_machines 4 \
     --main_process_ip $MASTER_ADDR \
