@@ -6,7 +6,7 @@
 #SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=128G
+#SBATCH --mem=64G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
 #SBATCH --gres=gpu:a100:4
@@ -39,6 +39,14 @@ source .venv/bin/activate
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
-srun uv run exp/grpo_train.py \
+# bruh 3 launchers lmao
+srun uv run accelerate launch \
+    --num_processes 4 \
+    --num_machines 2 \
+    --main_process_ip $MASTER_ADDR \
+    --main_process_port $MASTER_PORT \
+    --machine_rank $RANK \
+    --rdzv_backend c10d \
+    exp/grpo_train.py \
     model=baguettotron \
     training=grpo_baguettotron_grace
