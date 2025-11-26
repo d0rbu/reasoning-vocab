@@ -23,6 +23,7 @@ set -x
 # Set up distributed training environment variables
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
+export NODE_RANK=$SLURM_NODEID
 export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
@@ -46,7 +47,7 @@ srun uv run accelerate launch \
     --num_machines 4 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
-    --machine_rank $RANK \
+    --machine_rank $NODE_RANK \
     --rdzv_backend c10d \
     exp/grpo_train.py \
     model=baguettotron \
