@@ -151,6 +151,7 @@ PROBLEM_KEY_CANDIDATES = [
     "problem",
     "question",
     "prompt",
+    "messages",
 ]
 ANSWER_KEY_CANDIDATES = [
     "answer",
