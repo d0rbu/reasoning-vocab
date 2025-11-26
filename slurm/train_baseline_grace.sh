@@ -3,10 +3,11 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
 #SBATCH --time=24:00:00
-#SBATCH --ntasks=8
-#SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --nodes=4
+#SBATCH --ntasks=4
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=128G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
 #SBATCH --gres=gpu:a100:2
@@ -26,6 +27,11 @@ export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
 export NODE_RANK=$SLURM_NODEID
 export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
+
+# NCCL settings for better debugging and performance
+export NCCL_DEBUG=INFO
+export NCCL_IB_DISABLE=0
+export NCCL_NET_GDR_LEVEL=2
 
 # Load required modules (adjust for your cluster)
 module load GCCcore/13.3.0 Python/3.12.3
