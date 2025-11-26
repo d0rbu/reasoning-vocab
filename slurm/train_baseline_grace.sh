@@ -9,7 +9,7 @@
 #SBATCH --mem=128G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a100:4
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -41,4 +41,4 @@ source .venv/bin/activate
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run exp/grpo_train.py \
     model=baguettotron \
-    training=grpo_baguettotron
+    training=grpo_baguettotron_grace
