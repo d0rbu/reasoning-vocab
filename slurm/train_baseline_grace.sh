@@ -3,13 +3,13 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
 #SBATCH --time=48:00:00
-#SBATCH --ntasks=2
+#SBATCH --ntasks=4
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:a100:4
+#SBATCH --gres=gpu:a100:2
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
