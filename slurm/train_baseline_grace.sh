@@ -3,8 +3,8 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
 #SBATCH --time=48:00:00
-#SBATCH --ntasks=4
-#SBATCH --ntasks-per-node=1
+#SBATCH --ntasks=8
+#SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --output=baseline-%j
@@ -41,8 +41,8 @@ source .venv/bin/activate
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 # bruh 3 launchers lmao
 srun uv run accelerate launch \
-    --num_processes 4 \
-    --num_machines 2 \
+    --num_processes 8 \
+    --num_machines 4 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
