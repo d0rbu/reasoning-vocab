@@ -28,11 +28,6 @@ export NODE_RANK=$SLURM_NODEID
 export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
-# NCCL settings for better debugging and performance
-export NCCL_DEBUG=INFO
-export NCCL_IB_DISABLE=0
-export NCCL_NET_GDR_LEVEL=2
-
 # Load required modules (adjust for your cluster)
 module load GCCcore/13.3.0 Python/3.12.3
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
