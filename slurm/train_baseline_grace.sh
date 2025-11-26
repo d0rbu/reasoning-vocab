@@ -2,7 +2,7 @@
 
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --ntasks=8
 #SBATCH --ntasks-per-node=2
 #SBATCH --cpus-per-task=16
