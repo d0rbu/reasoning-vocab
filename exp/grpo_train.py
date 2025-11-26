@@ -157,6 +157,7 @@ ANSWER_KEY_CANDIDATES = [
     "solution",
     "response",
     "output",
+    "ground_truth",
 ]
 
 

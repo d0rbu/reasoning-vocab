@@ -3,7 +3,7 @@
 
 defaults:
   - model: qwen3_0.6b
-  - dataset: deepscaler
+  - dataset: gsm
   - training: grpo_default
   - logging: wandb
   - _self_

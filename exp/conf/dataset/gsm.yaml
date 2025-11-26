@@ -1,0 +1,14 @@
+# Dataset configuration for DeepScaleR-Preview-Dataset
+
+# Dataset identifier from HuggingFace
+name: "allenai/RLVR-GSM"
+streaming: false
+ignore_sufficient_disk_space_check: false
+
+# Split configuration
+train_split: "train"
+val_split: "test"
+
+# Data sampling (for faster iteration)
+max_train_samples: null  # null means use all samples
+max_val_samples: null
