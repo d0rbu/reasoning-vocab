@@ -80,23 +80,23 @@ fi
 # Set up environment variables that might be needed for Intel XPU
 export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
-export USE_XETLA=OFF
-export SYCL_CACHE_PERSISTENT=1
+# export USE_XETLA=OFF
+# export SYCL_CACHE_PERSISTENT=1
 # export FI_PROVIDER=shm
 # export FI_TCP_IFACE=lo
-export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
-export CCL_ATL_TRANSPORT=mpi
-export CCL_ZE_IPC_EXCHANGE=sockets
-export CCL_MNIC=local
+# export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
+# export CCL_ATL_TRANSPORT=mpi
+# export CCL_ZE_IPC_EXCHANGE=sockets
+# export CCL_MNIC=local
 export CCL_LOCAL_SIZE=8
 export CCL_LOCAL_RANK=$SLURM_LOCALID
 # export CCL_ATL_SHM=1
 # export CCL_SAME_STREAM=1
 # export CCL_BLOCKING_WAIT=0
-export CCL_ALLREDUCE=ring
-export CCL_PROCESS_LAUNCHER=none
-export I_MPI_OFFLOAD=1
-export I_MPI_OFFLOAD_TOPOLIB=level_zero
+# export CCL_ALLREDUCE=ring
+# export CCL_PROCESS_LAUNCHER=none
+# export I_MPI_OFFLOAD=1
+# export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
 echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
