@@ -29,8 +29,51 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
+
 module load GCCcore/13.3.0 Python/3.12.3 libfabric/2.0.0 iimpi/2024a
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
+
+# Explicitly set I_MPI_ROOT if not already set by the module
+if [ -z "$I_MPI_ROOT" ]; then
+    # Try to find Intel MPI installation from loaded modules
+    # EasyBuild (used by many HPC clusters) sets EBROOTIIMPI
+    if [ -n "$EBROOTIIMPI" ]; then
+        export I_MPI_ROOT=$EBROOTIIMPI/mpi
+        echo "Setting I_MPI_ROOT from EasyBuild: $I_MPI_ROOT"
+    elif [ -n "$EBROOTIMPI" ]; then
+        export I_MPI_ROOT=$EBROOTIMPI
+        echo "Setting I_MPI_ROOT from EasyBuild: $I_MPI_ROOT"
+    elif [ -n "$MPIROOT" ]; then
+        export I_MPI_ROOT=$MPIROOT
+        echo "Setting I_MPI_ROOT from MPIROOT: $I_MPI_ROOT"
+    elif [ -n "$MPI_ROOT" ]; then
+        export I_MPI_ROOT=$MPI_ROOT
+        echo "Setting I_MPI_ROOT from MPI_ROOT: $I_MPI_ROOT"
+    else
+        echo "Warning: Could not determine I_MPI_ROOT from environment"
+        echo "Available environment variables:"
+        env | grep -i mpi | head -20
+        
+        # Common installation paths - adjust based on your cluster
+        for path in /opt/intel/oneapi/mpi/latest /usr/local/intel/mpi /opt/intel/mpi; do
+            if [ -d "$path" ]; then
+                export I_MPI_ROOT=$path
+                echo "Found Intel MPI at: $I_MPI_ROOT"
+                break
+            fi
+        done
+    fi
+fi
+
+# If we found I_MPI_ROOT, also set ONEAPI_ROOT for compatibility
+if [ -n "$I_MPI_ROOT" ] && [ -z "$ONEAPI_ROOT" ]; then
+    # Try to derive ONEAPI_ROOT from I_MPI_ROOT
+    ONEAPI_CANDIDATE=$(dirname "$I_MPI_ROOT")
+    if [ -d "$ONEAPI_CANDIDATE" ]; then
+        export ONEAPI_ROOT=$ONEAPI_CANDIDATE
+        echo "Setting ONEAPI_ROOT to: $ONEAPI_ROOT"
+    fi
+fi
 
 # Set up environment variables that might be needed for Intel XPU
 export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
@@ -42,38 +85,42 @@ export SYCL_CACHE_PERSISTENT=1
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
 export CCL_ATL_TRANSPORT=mpi
 export CCL_ZE_IPC_EXCHANGE=sockets
+export CCL_MNIC=local
+export CCL_LOCAL_SIZE=8
+export CCL_LOCAL_RANK=$SLURM_LOCALID
 # export CCL_ATL_SHM=1
 # export CCL_SAME_STREAM=1
 # export CCL_BLOCKING_WAIT=0
+export CCL_ALLREDUCE=ring
 export CCL_PROCESS_LAUNCHER=none
-export CCL_LOCAL_SIZE=8
-export CCL_LOCAL_RANK=$SLURM_LOCALID
-export CCL_MNIC=local
 export I_MPI_OFFLOAD=1
 export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
-# Configure oneCCL worker threads
-# Get the list of CPU cores assigned by SLURM to this job
-# SLURM_JOB_CPUS_PER_NODE gives us the number of CPUs allocated
-# We'll use the CPU list from taskset to get the actual core IDs
-SLURM_CPUS=$(taskset -cp $$ | cut -d: -f2 | tr -d ' ')
-
-# Set worker count to 1 to minimize resource usage
-export CCL_WORKER_COUNT=1
-
-# Use the first CPU from our SLURM allocation for the worker thread
-# oneCCL expects a single CPU core, not a comma-separated list
-FIRST_CPU=$(echo $SLURM_CPUS | cut -d',' -f1 | cut -d'-' -f1)
-export CCL_WORKER_AFFINITY=$FIRST_CPU
-
-echo "🔧 oneCCL Configuration:"
+echo "🔧 Distributed Training Configuration:"
+echo "   - WORLD_SIZE: $WORLD_SIZE"
+echo "   - MASTER_ADDR: $MASTER_ADDR"
+echo "   - MASTER_PORT: $MASTER_PORT"
 echo "   - SLURM assigned CPUs: $SLURM_CPUS"
 echo "   - First CPU extracted: $FIRST_CPU"
 echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
 echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
+echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT"
+echo "   - I_MPI_ROOT: ${I_MPI_ROOT:-NOT SET}"
+echo "   - I_MPI_OFFLOAD: $I_MPI_OFFLOAD"
 # echo "   - FI_INFO: $(fi_info)"
 # echo "   - FI_PROVIDER: $FI_PROVIDER"
 # echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
+echo "   - CCL using Intel MPI with Level Zero IPC"
+echo ""
+
+# Verify Intel MPI is properly configured
+if [ -z "$I_MPI_ROOT" ]; then
+    echo "⚠️  WARNING: I_MPI_ROOT is not set! oneCCL may fail to initialize."
+    echo "⚠️  Loaded modules:"
+    module list
+else
+    echo "✅ Intel MPI configured at: $I_MPI_ROOT"
+fi
 echo ""
 
 # Change to the project directory

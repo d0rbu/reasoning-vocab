@@ -25,6 +25,7 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
+    PreTrainedTokenizerBase,
 )
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward
@@ -396,6 +397,10 @@ def main(cfg: DictConfig):
         train_dataset=train_dataset,
         processing_class=tokenizer,
         reward_funcs=cast(list[RewardFunc], [accuracy_reward]),
+    )
+
+    assert isinstance(trainer.processing_class, PreTrainedTokenizerBase), (
+        f"Processing class must be a PreTrainedTokenizerBase, got {type(trainer.processing_class)}"
     )
 
     if TOKEN_TYPE_IDS_NAME in trainer.processing_class.model_input_names:

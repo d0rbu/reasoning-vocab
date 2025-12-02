@@ -128,7 +128,7 @@ class ReasoningTokenMapCallback(TrainerCallback):
         )
 
         # Get checkpoint path from args
-        checkpoint_path = Path(args.output_dir)
+        checkpoint_path = Path(args.output_dir) if args.output_dir else Path("./out/trainer_output")
 
         # If we're in the middle of training, get the actual checkpoint-{step} directory
         if state.global_step > 0:
