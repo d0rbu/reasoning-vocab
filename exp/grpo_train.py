@@ -17,7 +17,6 @@ import datasets.builder
 import hydra
 import torch as th
 import transformers
-import wandb
 from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
 from omegaconf import DictConfig, OmegaConf
@@ -26,11 +25,13 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
     PreTrainedTokenizer,
+    PreTrainedTokenizerBase,
 )
 from trl import GRPOConfig, GRPOTrainer
 from trl.rewards import accuracy_reward
 from trl.trainer.grpo_trainer import RewardFunc
 
+import wandb
 from core.reasoning_vocab_model import (
     ReasoningVocabModel,
     get_reasoning_class,
@@ -396,6 +397,10 @@ def main(cfg: DictConfig):
         train_dataset=train_dataset,
         processing_class=tokenizer,
         reward_funcs=cast(list[RewardFunc], [accuracy_reward]),
+    )
+
+    assert isinstance(trainer.processing_class, PreTrainedTokenizerBase), (
+        f"Processing class must be a PreTrainedTokenizerBase, got {type(trainer.processing_class)}"
     )
 
     if TOKEN_TYPE_IDS_NAME in trainer.processing_class.model_input_names:

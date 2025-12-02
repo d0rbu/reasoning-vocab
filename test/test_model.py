@@ -52,7 +52,7 @@ def test_model_initialization_no_reasoning(tiny_config):
 
     assert model.standard_vocab_size == tiny_config.vocab_size
     assert model.num_reasoning_tokens() == 0
-    assert len(model.reasoning_token_ids) == 0
+    assert len(model.get_reasoning_token_ids()) == 0
     # Vocab size should remain unchanged
     assert model.get_input_embeddings().num_embeddings == tiny_config.vocab_size
 
@@ -211,7 +211,7 @@ def test_logits_processor_standard_mode(tiny_config, gpt2_tokenizer):
     # Create reasoning tokenizer wrapper
     reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
-    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, reasoning_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.num_standard_tokens(), reasoning_tokenizer)
 
     batch_size = 2
     seq_len = 5
@@ -247,7 +247,7 @@ def test_logits_processor_reasoning_mode(tiny_config, gpt2_tokenizer):
     reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
     processor = ReasoningVocabLogitsProcessor(
-        model.standard_vocab_size, reasoning_tokenizer, "<think>", "</think>"
+        model.num_standard_tokens(), reasoning_tokenizer, "<think>", "</think>"
     )
 
     batch_size = 2
@@ -303,6 +303,7 @@ def test_generate_compatibility(tiny_config):
     with th.no_grad():
         output = model.generate(input_ids, max_new_tokens=5, do_sample=False)
 
+    assert isinstance(output, th.LongTensor), "generate should return a LongTensor"
     assert output.shape[0] == batch_size
     assert output.shape[1] > seq_len
 
@@ -326,7 +327,7 @@ def test_generate_with_logits_processor(tiny_config, gpt2_tokenizer):
     reasoning_tokenizer = ReasoningTokenizer(gpt2_tokenizer, reasoning_token_ids)
 
     # Get logits processor (no thinking tags, so reasoning vocab will be masked)
-    processor = ReasoningVocabLogitsProcessor(model.standard_vocab_size, reasoning_tokenizer)
+    processor = ReasoningVocabLogitsProcessor(model.num_standard_tokens(), reasoning_tokenizer)
 
     # Test generation with processor - use LogitsProcessorList
     processor_list = LogitsProcessorList([processor])
@@ -340,6 +341,7 @@ def test_generate_with_logits_processor(tiny_config, gpt2_tokenizer):
             logits_processor=processor_list,
         )
 
+    assert isinstance(output, th.LongTensor), "generate should return a LongTensor"
     assert output.shape[0] == batch_size
     assert output.shape[1] > seq_len
 

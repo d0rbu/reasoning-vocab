@@ -13,6 +13,7 @@ from collections.abc import Sequence
 import torch as th
 from transformers import LlamaForCausalLM, PretrainedConfig, PreTrainedModel, Qwen3ForCausalLM
 from transformers.generation.logits_process import LogitsProcessor
+from transformers.generation.utils import GenerationMixin
 
 from core.tokenizer_utils import ReasoningTokenizer
 
@@ -72,7 +73,7 @@ class ReasoningVocabLogitsProcessor(LogitsProcessor):
         return scores
 
 
-class ReasoningVocabModel(PreTrainedModel):
+class ReasoningVocabModel(PreTrainedModel, GenerationMixin):
     """
     Base class for reasoning vocabulary models.
     """
@@ -98,8 +99,20 @@ class ReasoningVocabModel(PreTrainedModel):
         """Get the number of reasoning tokens."""
         pass
 
+    @abstractmethod
+    def num_standard_tokens(self) -> int:
+        """Get the number of standard tokens."""
+        pass
 
-def get_reasoning_class[T: PreTrainedModel](model_class: type[T]) -> type[T]:
+
+def get_reasoning_class(model_class) -> type[ReasoningVocabModel]:
+    assert issubclass(model_class, PreTrainedModel), (
+        f"Model class {model_class} must be a subclass of PreTrainedModel"
+    )
+    assert issubclass(model_class, GenerationMixin), (
+        f"Model class {model_class} must be a subclass of GenerationMixin"
+    )
+
     """
     Get a reasoning-enabled class for a given model class.
 
@@ -150,6 +163,10 @@ def get_reasoning_class[T: PreTrainedModel](model_class: type[T]) -> type[T]:
         def num_reasoning_tokens(self) -> int:
             """Get the number of reasoning tokens."""
             return self.reasoning_vocab_size
+
+        def num_standard_tokens(self) -> int:
+            """Get the number of standard tokens."""
+            return self.standard_vocab_size
 
     return ReasoningModel
 

@@ -114,6 +114,9 @@ def analyze_token_usage(
     pct_standard = 100.0 * num_standard / total if total > 0 else 0.0
     pct_reasoning = 100.0 * num_reasoning / total if total > 0 else 0.0
 
+    assert isinstance(num_standard, int), "Number of standard tokens must be an integer"
+    assert isinstance(num_reasoning, int), "Number of reasoning tokens must be an integer"
+
     return num_standard, num_reasoning, pct_standard, pct_reasoning
 
 

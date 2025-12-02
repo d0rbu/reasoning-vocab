@@ -176,7 +176,7 @@ def generate_sample(
         model_device = next(model.parameters()).device
         input_ids = encoded_result.to(model_device)
     else:
-        # Get model device  
+        # Get model device
         model_device = next(model.parameters()).device
         input_ids = th.tensor(encoded_result, dtype=th.long).unsqueeze(0).to(model_device)
 
@@ -184,7 +184,7 @@ def generate_sample(
     logits_processors = []
     if use_reasoning_logits_processor:
         # Get standard vocab size as int
-        if hasattr(model, 'standard_vocab_size'):
+        if hasattr(model, "standard_vocab_size"):
             std_vocab_size_attr = model.standard_vocab_size
             if isinstance(std_vocab_size_attr, th.Tensor):
                 std_vocab_size = int(std_vocab_size_attr.item())
@@ -195,7 +195,7 @@ def generate_sample(
                 std_vocab_size = tokenizer.standard_vocab_size
         else:
             std_vocab_size = tokenizer.standard_vocab_size
-            
+
         logits_processors.append(
             ReasoningVocabLogitsProcessor(
                 standard_vocab_size=std_vocab_size,
