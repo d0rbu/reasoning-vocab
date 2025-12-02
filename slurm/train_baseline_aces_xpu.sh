@@ -29,10 +29,14 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
-
 module load GCCcore/13.3.0 Python/3.12.3
-module load GCCcore/14.2.0 libfabric/2.0.0
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
+
+# Load Intel MPI (iimpi includes both Intel MPI and Intel compiler)
+module load iimpi/2024a
+
+# DON'T load external libfabric module - it conflicts with Intel MPI's bundled version
+# Intel MPI includes its own libfabric (2.1.0-impi) with proper provider support
 
 # Explicitly set I_MPI_ROOT if not already set by the module
 if [ -z "$I_MPI_ROOT" ]; then
@@ -84,14 +88,17 @@ export SYCL_CACHE_PERSISTENT=1
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
 
 # oneCCL configuration for single-node multi-GPU
-# DON'T set FI_PROVIDER - let libfabric auto-detect (shm not available on this system)
-# Use OFI with shared memory via CCL_ATL_SHM for intra-node communication
-export CCL_ATL_TRANSPORT=ofi
-export CCL_ATL_SHM=1
+# Use MPI transport instead of OFI to avoid libfabric provider issues
+# MPI will be used for CPU coordination, Level Zero IPC for GPU-to-GPU
+export CCL_ATL_TRANSPORT=mpi
 export CCL_ZE_IPC_EXCHANGE=sockets
 export CCL_LOCAL_SIZE=8
 export CCL_LOCAL_RANK=$SLURM_LOCALID
 export CCL_PROCESS_LAUNCHER=none
+
+# Enable MPI GPU offload support
+export I_MPI_OFFLOAD=1
+export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
 echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
