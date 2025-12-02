@@ -29,10 +29,13 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
-
 module load GCCcore/13.3.0 Python/3.12.3
-module load GCCcore/14.2.0 libfabric/2.0.0
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
+
+# Load libfabric FIRST, then Intel MPI
+# This ensures the library paths are set correctly
+module load GCCcore/14.2.0 libfabric/2.0.0
+module load iimpi/2024a
 
 # Explicitly set I_MPI_ROOT if not already set by the module
 if [ -z "$I_MPI_ROOT" ]; then
@@ -74,6 +77,23 @@ if [ -n "$I_MPI_ROOT" ] && [ -z "$ONEAPI_ROOT" ]; then
         export ONEAPI_ROOT=$ONEAPI_CANDIDATE
         echo "Setting ONEAPI_ROOT to: $ONEAPI_ROOT"
     fi
+fi
+
+# CRITICAL FIX: Ensure Python oneCCL can find libfabric and its providers
+# The oneCCL library dynamically loads libfabric but needs to find the system version
+if [ -n "$EBROOTLIBFABRIC" ]; then
+    # EasyBuild sets EBROOTLIBFABRIC for the libfabric module
+    export LD_LIBRARY_PATH="$EBROOTLIBFABRIC/lib:${LD_LIBRARY_PATH}"
+    echo "Added libfabric to LD_LIBRARY_PATH: $EBROOTLIBFABRIC/lib"
+fi
+
+# Also ensure FI_PROVIDER_PATH points to where providers are installed
+if [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib/libfabric" ]; then
+    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib/libfabric"
+    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+elif [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib" ]; then
+    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib"
+    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
 fi
 
 # Set up environment variables that might be needed for Intel XPU
