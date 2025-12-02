@@ -130,6 +130,7 @@ echo ""
 if [ -n "$EBROOTLIBFABRIC" ]; then
     # EasyBuild sets EBROOTLIBFABRIC for the libfabric module
     export LD_LIBRARY_PATH="$EBROOTLIBFABRIC/lib:${LD_LIBRARY_PATH}"
+    export LD_PRELOAD="$EBROOTLIBFABRIC/lib/libfabric.so"
     echo "Added libfabric to LD_LIBRARY_PATH: $EBROOTLIBFABRIC/lib"
 fi
 # Also ensure FI_PROVIDER_PATH points to where providers are installed
