@@ -7,6 +7,8 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "torch>=2.9.0",
+    "torchvision",
+    "torchaudio",
     "pytorch-triton-xpu",
     "oneccl-bind-pt==2.8.0+xpu",
     "transformers>=4.40.0",
