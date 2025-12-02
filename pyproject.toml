@@ -33,16 +33,6 @@ dev = [
     "pre-commit>=3.6.0",
     "ruff>=0.6.3",
 ]
-xpu = [
-    "pytorch-triton-xpu",
-    "oneccl",
-    "mkl",
-    "onemkl-sycl-blas",
-    "onemkl-sycl-dft",
-    "onemkl-sycl-lapack",
-    "onemkl-sycl-rng",
-    "onemkl-sycl-sparse",
-]
 
 [build-system]
 requires = ["hatchling"]
