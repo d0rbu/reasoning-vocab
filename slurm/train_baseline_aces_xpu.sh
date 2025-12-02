@@ -29,12 +29,9 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
-module load GCCcore/13.3.0 Python/3.12.3
-module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
-# Load Intel MPI for oneCCL (required even for single-node)
-# iimpi/2024a includes both Intel compiler and Intel MPI
-module load iimpi/2024a
+module load GCCcore/13.3.0 Python/3.12.3 libfabric/2.0.0 iimpi/2024a
+module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
 # Explicitly set I_MPI_ROOT if not already set by the module
 if [ -z "$I_MPI_ROOT" ]; then
@@ -83,17 +80,19 @@ export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export USE_XETLA=OFF
 export SYCL_CACHE_PERSISTENT=1
+# export FI_PROVIDER=shm
+# export FI_TCP_IFACE=lo
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
-
-# For single-node multi-GPU: configure oneCCL for local-only operation
-# Use sockets-based Level Zero IPC, avoid MPI/OFI entirely
-export CCL_ZE_IPC_EXCHANGE=sockets
 export CCL_ATL_TRANSPORT=mpi
+export CCL_ZE_IPC_EXCHANGE=sockets
 export CCL_MNIC=local
-export CCL_ALLREDUCE=ring
-export CCL_PROCESS_LAUNCHER=none
 export CCL_LOCAL_SIZE=8
 export CCL_LOCAL_RANK=$SLURM_LOCALID
+# export CCL_ATL_SHM=1
+# export CCL_SAME_STREAM=1
+# export CCL_BLOCKING_WAIT=0
+export CCL_ALLREDUCE=ring
+export CCL_PROCESS_LAUNCHER=none
 export I_MPI_OFFLOAD=1
 export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
@@ -101,9 +100,16 @@ echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
 echo "   - MASTER_ADDR: $MASTER_ADDR"
 echo "   - MASTER_PORT: $MASTER_PORT"
+echo "   - SLURM assigned CPUs: $SLURM_CPUS"
+echo "   - First CPU extracted: $FIRST_CPU"
+echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
+echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
 echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT"
 echo "   - I_MPI_ROOT: ${I_MPI_ROOT:-NOT SET}"
 echo "   - I_MPI_OFFLOAD: $I_MPI_OFFLOAD"
+# echo "   - FI_INFO: $(fi_info)"
+# echo "   - FI_PROVIDER: $FI_PROVIDER"
+# echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
 echo "   - CCL using Intel MPI with Level Zero IPC"
 echo ""
 
