@@ -29,48 +29,39 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
-module load GCCcore/13.3.0 Python/3.12.3 libfabric/2.0.0
+module load GCCcore/13.3.0 Python/3.12.3
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
+
+# Load Intel MPI for oneCCL (required even for single-node)
+# Check what Intel MPI modules are available: module avail intel-mpi or impi
+module load intel-mpi/2021.14 || module load impi/2021.14 || echo "Warning: Intel MPI module not found"
 
 # Set up environment variables that might be needed for Intel XPU
 export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export USE_XETLA=OFF
 export SYCL_CACHE_PERSISTENT=1
-export FI_PROVIDER=shm
-export FI_TCP_IFACE=lo
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
-export CCL_ATL_TRANSPORT=ofi
+
+# For single-node multi-GPU: configure oneCCL for local-only operation
+# Use sockets-based Level Zero IPC, avoid MPI/OFI entirely
 export CCL_ZE_IPC_EXCHANGE=sockets
-export CCL_ATL_SHM=1
-export CCL_SAME_STREAM=1
-export CCL_BLOCKING_WAIT=0
+export CCL_ATL_TRANSPORT=mpi
+export CCL_MNIC=local
+export CCL_ALLREDUCE=ring
 export CCL_PROCESS_LAUNCHER=none
 export CCL_LOCAL_SIZE=8
 export CCL_LOCAL_RANK=$SLURM_LOCALID
+export I_MPI_OFFLOAD=1
+export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
-# Configure oneCCL worker threads
-# Get the list of CPU cores assigned by SLURM to this job
-# SLURM_JOB_CPUS_PER_NODE gives us the number of CPUs allocated
-# We'll use the CPU list from taskset to get the actual core IDs
-SLURM_CPUS=$(taskset -cp $$ | cut -d: -f2 | tr -d ' ')
-
-# Set worker count to 1 to minimize resource usage
-export CCL_WORKER_COUNT=1
-
-# Use the first CPU from our SLURM allocation for the worker thread
-# oneCCL expects a single CPU core, not a comma-separated list
-FIRST_CPU=$(echo $SLURM_CPUS | cut -d',' -f1 | cut -d'-' -f1)
-export CCL_WORKER_AFFINITY=$FIRST_CPU
-
-echo "🔧 oneCCL Configuration:"
-echo "   - SLURM assigned CPUs: $SLURM_CPUS"
-echo "   - First CPU extracted: $FIRST_CPU"
-echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
-echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
-echo "   - FI_INFO: $(fi_info)"
-echo "   - FI_PROVIDER: $FI_PROVIDER"
-echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
+echo "🔧 Distributed Training Configuration:"
+echo "   - WORLD_SIZE: $WORLD_SIZE"
+echo "   - MASTER_ADDR: $MASTER_ADDR"
+echo "   - MASTER_PORT: $MASTER_PORT"
+echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT"
+echo "   - I_MPI_ROOT: $I_MPI_ROOT"
+echo "   - CCL using Intel MPI with Level Zero IPC"
 echo ""
 
 # Change to the project directory

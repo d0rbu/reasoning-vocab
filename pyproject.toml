@@ -33,6 +33,16 @@ dev = [
     "pre-commit>=3.6.0",
     "ruff>=0.6.3",
 ]
+xpu = [
+    "pytorch-triton-xpu",
+    "oneccl",
+    "mkl",
+    "onemkl-sycl-blas",
+    "onemkl-sycl-dft",
+    "onemkl-sycl-lapack",
+    "onemkl-sycl-rng",
+    "onemkl-sycl-sparse",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -84,3 +94,20 @@ dev = [
     "pytest-cov>=7.0.0",
     "ruff>=0.14.3",
 ]
+
+[[tool.uv.index]]
+name = "torch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "torch-xpu" }
+pytorch-triton-xpu = { index = "torch-xpu" }
+mkl = { index = "torch-xpu" }
+numpy = { index = "torch-xpu" }
+oneccl = { index = "torch-xpu" }
+onemkl-sycl-blas = { index = "torch-xpu" }
+onemkl-sycl-dft = { index = "torch-xpu" }
+onemkl-sycl-lapack = { index = "torch-xpu" }
+onemkl-sycl-rng = { index = "torch-xpu" }
+onemkl-sycl-sparse = { index = "torch-xpu" }
