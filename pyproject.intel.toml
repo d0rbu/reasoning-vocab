@@ -7,8 +7,6 @@ requires-python = ">=3.12"
 license = { text = "MIT" }
 dependencies = [
     "torch>=2.9.0",
-#    "torchvision>=0.24.0",
-#    "torchaudio>=2.9.0",
     "pytorch-triton-xpu",
     "transformers>=4.40.0",
     "scikit-learn>=1.7.2",
@@ -103,8 +101,6 @@ explicit = true
 
 [tool.uv.sources]
 torch = { index = "torch-xpu" }
-#torchvision = { index = "torch-xpu" }
-#torchaudio = { index = "torch-xpu" }
 pytorch-triton-xpu = { index = "torch-xpu" }
 mkl = { index = "torch-xpu" }
 numpy = { index = "torch-xpu" }
