@@ -36,6 +36,7 @@ module load WebProxy  # Required for internet access (HuggingFace, WandB)
 export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export FI_PROVIDER=tcp
+export FI_TCP_IFACE=lo
 
 # Configure oneCCL worker threads
 # Get the list of CPU cores assigned by SLURM to this job
@@ -56,6 +57,9 @@ echo "   - SLURM assigned CPUs: $SLURM_CPUS"
 echo "   - First CPU extracted: $FIRST_CPU"
 echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
 echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
+echo "   - FI_INFO: $(fi_info)"
+echo "   - FI_PROVIDER: $FI_PROVIDER"
+echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
 echo ""
 
 # Change to the project directory
