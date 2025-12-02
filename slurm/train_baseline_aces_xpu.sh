@@ -35,6 +35,7 @@ module load WebProxy  # Required for internet access (HuggingFace, WandB)
 # Set up environment variables that might be needed for Intel XPU
 export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
+export FI_PROVIDER=tcp
 
 # Configure oneCCL worker threads
 # Get the list of CPU cores assigned by SLURM to this job
