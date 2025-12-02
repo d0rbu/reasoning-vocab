@@ -32,7 +32,6 @@ export WORLD_SIZE=$SLURM_NTASKS
 
 module load GCCcore/13.3.0 Python/3.12.3
 module load GCCcore/14.2.0 libfabric/2.0.0
-module load iimpi/2024a
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
 # Explicitly set I_MPI_ROOT if not already set by the module
