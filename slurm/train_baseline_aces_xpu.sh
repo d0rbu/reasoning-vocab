@@ -29,7 +29,7 @@ export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
-module load GCCcore/13.3.0 Python/3.12.3
+module load GCCcore/13.3.0 Python/3.12.3 libfabric/2.0.0
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
 # Set up environment variables that might be needed for Intel XPU
