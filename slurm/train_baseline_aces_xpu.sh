@@ -98,6 +98,7 @@ export CCL_DG2_USM=1
 export CCL_PROCESS_LAUNCHER=none
 # export I_MPI_OFFLOAD=1
 # export I_MPI_OFFLOAD_TOPOLIB=level_zero
+export HYDRA_FULL_ERROR=1
 
 echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
