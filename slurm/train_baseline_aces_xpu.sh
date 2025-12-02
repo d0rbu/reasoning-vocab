@@ -84,16 +84,17 @@ export SYCL_CACHE_PERSISTENT=1
 export FI_PROVIDER=tcp
 export FI_TCP_IFACE=lo
 # export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
-# export CCL_ATL_TRANSPORT=mpi
+export CCL_ATL_TRANSPORT=ofi
 # export CCL_ZE_IPC_EXCHANGE=sockets
 # export CCL_MNIC=local
 export CCL_LOCAL_SIZE=8
 export CCL_LOCAL_RANK=$SLURM_LOCALID
-# export CCL_ATL_SHM=1
+export CCL_ATL_SHM=1
+export CCL_LOG_LEVEL=info
 # export CCL_SAME_STREAM=1
 # export CCL_BLOCKING_WAIT=0
 # export CCL_ALLREDUCE=ring
-# export CCL_PROCESS_LAUNCHER=none
+export CCL_PROCESS_LAUNCHER=none
 # export I_MPI_OFFLOAD=1
 # export I_MPI_OFFLOAD_TOPOLIB=level_zero
 
@@ -111,7 +112,6 @@ echo "   - I_MPI_OFFLOAD: $I_MPI_OFFLOAD"
 echo "   - FI_INFO: $(fi_info)"
 echo "   - FI_PROVIDER: $FI_PROVIDER"
 echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
-echo "   - CCL using Intel MPI with Level Zero IPC"
 echo ""
 
 # Verify Intel MPI is properly configured
