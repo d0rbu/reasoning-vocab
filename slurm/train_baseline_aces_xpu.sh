@@ -37,6 +37,9 @@ export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export FI_PROVIDER=tcp
 export FI_TCP_IFACE=lo
+export CCL_PROCESS_LAUNCHER=none
+export CCL_LOCAL_SIZE=8
+export CCL_LOCAL_RANK=$SLURM_LOCALID
 
 # Configure oneCCL worker threads
 # Get the list of CPU cores assigned by SLURM to this job
