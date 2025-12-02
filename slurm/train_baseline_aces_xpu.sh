@@ -81,67 +81,25 @@ export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export USE_XETLA=OFF
 export SYCL_CACHE_PERSISTENT=1
-# export FI_PROVIDER=shm
-export FI_TCP_IFACE=lo
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
-export CCL_ATL_TRANSPORT=ofi
-export CCL_ZE_IPC_EXCHANGE=sockets
-# export CCL_MNIC=local
-export CCL_LOCAL_SIZE=8
-export CCL_LOCAL_RANK=$SLURM_LOCALID
-export CCL_ATL_SHM=1
-export CCL_LOG_LEVEL=debug
-export CCL_SAME_STREAM=1
-export CCL_BLOCKING_WAIT=0
-export CCL_DG2_USM=1
-# export CCL_ALLREDUCE=ring
-export CCL_PROCESS_LAUNCHER=none
-# export I_MPI_OFFLOAD=1
-# export I_MPI_OFFLOAD_TOPOLIB=level_zero
-export HYDRA_FULL_ERROR=1
+
+# ABANDON oneCCL/libfabric entirely - it's fundamentally broken in this environment
+# Use PyTorch's native GLOO backend for CPU communication
+# Level Zero handles GPU-to-GPU transfers directly
+export TORCH_DISTRIBUTED_BACKEND=gloo
+export GLOO_SOCKET_IFNAME=ib0  # or eth0, adjust for your cluster's network interface
+
+# Disable oneCCL to prevent it from interfering
+export CCL_WORKER_COUNT=0
 
 echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
 echo "   - MASTER_ADDR: $MASTER_ADDR"
 echo "   - MASTER_PORT: $MASTER_PORT"
-echo "   - SLURM assigned CPUs: $SLURM_CPUS"
-echo "   - First CPU extracted: $FIRST_CPU"
-echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
-echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
-echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT"
-echo "   - I_MPI_ROOT: ${I_MPI_ROOT:-NOT SET}"
-echo "   - I_MPI_OFFLOAD: $I_MPI_OFFLOAD"
-echo "   - FI_INFO: $(fi_info)"
-echo "   - FI_PROVIDER: $FI_PROVIDER"
-echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
+echo "   - TORCH_DISTRIBUTED_BACKEND: $TORCH_DISTRIBUTED_BACKEND"
+echo "   - GLOO_SOCKET_IFNAME: $GLOO_SOCKET_IFNAME"
+echo "   - Using PyTorch GLOO (no oneCCL/libfabric)"
 echo ""
-
-# Verify Intel MPI is properly configured
-if [ -z "$I_MPI_ROOT" ]; then
-    echo "⚠️  WARNING: I_MPI_ROOT is not set! oneCCL may fail to initialize."
-    echo "⚠️  Loaded modules:"
-    module list
-else
-    echo "✅ Intel MPI configured at: $I_MPI_ROOT"
-fi
-echo ""
-
-# CRITICAL FIX: Ensure Python oneCCL can find libfabric and its providers
-# The oneCCL library dynamically loads libfabric but needs to find the system version
-if [ -n "$EBROOTLIBFABRIC" ]; then
-    # EasyBuild sets EBROOTLIBFABRIC for the libfabric module
-    export LD_LIBRARY_PATH="$EBROOTLIBFABRIC/lib:${LD_LIBRARY_PATH}"
-    export LD_PRELOAD="$EBROOTLIBFABRIC/lib/libfabric.so"
-    echo "Added libfabric to LD_LIBRARY_PATH: $EBROOTLIBFABRIC/lib"
-fi
-# Also ensure FI_PROVIDER_PATH points to where providers are installed
-if [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib/libfabric" ]; then
-    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib/libfabric"
-    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
-elif [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib" ]; then
-    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib"
-    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
-fi
 
 # Change to the project directory
 cd $SCRATCH/reasoning-vocab
