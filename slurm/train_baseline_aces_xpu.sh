@@ -81,7 +81,7 @@ export ZE_ENABLE_PCI_ID_DEVICE_ORDER=1
 export SYCL_DEVICE_FILTER=level_zero:gpu
 export USE_XETLA=OFF
 export SYCL_CACHE_PERSISTENT=1
-export FI_PROVIDER=shm
+# export FI_PROVIDER=shm
 export FI_TCP_IFACE=lo
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
 export CCL_ATL_TRANSPORT=ofi
@@ -124,6 +124,22 @@ else
     echo "✅ Intel MPI configured at: $I_MPI_ROOT"
 fi
 echo ""
+
+# CRITICAL FIX: Ensure Python oneCCL can find libfabric and its providers
+# The oneCCL library dynamically loads libfabric but needs to find the system version
+if [ -n "$EBROOTLIBFABRIC" ]; then
+    # EasyBuild sets EBROOTLIBFABRIC for the libfabric module
+    export LD_LIBRARY_PATH="$EBROOTLIBFABRIC/lib:${LD_LIBRARY_PATH}"
+    echo "Added libfabric to LD_LIBRARY_PATH: $EBROOTLIBFABRIC/lib"
+fi
+# Also ensure FI_PROVIDER_PATH points to where providers are installed
+if [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib/libfabric" ]; then
+    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib/libfabric"
+    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+elif [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib" ]; then
+    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib"
+    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+fi
 
 # Change to the project directory
 cd $SCRATCH/reasoning-vocab
