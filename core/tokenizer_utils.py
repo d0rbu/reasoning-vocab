@@ -291,6 +291,10 @@ class ReasoningTokenizer:
         reasoning_idx = token_id - self.standard_vocab_size
         standard_id = self.reasoning_token_ids[reasoning_idx].item()
         multiplicity = self.reasoning_to_multiplicity[reasoning_idx].item() + 1
+
+        assert isinstance(standard_id, int), "Standard ID must be an integer"
+        assert isinstance(multiplicity, int), "Multiplicity must be an integer"
+
         token_string = self.tokenizer.decode([standard_id])
 
         return token_string, multiplicity

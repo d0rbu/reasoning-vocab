@@ -566,13 +566,15 @@ class TestIntegration:
         hidden_size = 128
 
         # Create synthetic trajectories
-        trajectories = np.random.randn(num_checkpoints, num_tokens, hidden_size)
+        trajectories = th.randn(num_checkpoints, num_tokens, hidden_size)
 
         # Apply PCA
         pca_traj, _ = compute_pca_trajectories(trajectories, n_components=2)
 
         # Check shapes
-        assert pca_traj.shape == (num_checkpoints, num_tokens, 2)
+        assert pca_traj.shape == (num_checkpoints, num_tokens, 2), (
+            f"Expected (num_checkpoints, num_tokens, 2), got {pca_traj.shape}"
+        )
 
         # Create plot
         trajectories_dict = {"test": pca_traj}

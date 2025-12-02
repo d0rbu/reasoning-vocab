@@ -30,7 +30,8 @@ export WORLD_SIZE=$SLURM_NTASKS
 
 # Load required modules (adjust for your cluster)
 
-module load GCCcore/13.3.0 Python/3.12.3 libfabric/2.0.0 iimpi/2024a
+module load GCCcore/13.3.0 Python/3.12.3
+module load GCCcore/14.2.0 libfabric/2.0.0
 module load WebProxy  # Required for internet access (HuggingFace, WandB)
 
 # Explicitly set I_MPI_ROOT if not already set by the module
@@ -82,8 +83,9 @@ export USE_XETLA=OFF
 export SYCL_CACHE_PERSISTENT=1
 export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=2
 
-# For single-node multi-GPU: use OFI with shared memory (best performance)
-# OFI+SHM avoids MPI overhead for intra-node communication
+# oneCCL configuration for single-node multi-GPU
+# DON'T set FI_PROVIDER - let libfabric auto-detect (shm not available on this system)
+# Use OFI with shared memory via CCL_ATL_SHM for intra-node communication
 export CCL_ATL_TRANSPORT=ofi
 export CCL_ATL_SHM=1
 export CCL_ZE_IPC_EXCHANGE=sockets
@@ -95,17 +97,9 @@ echo "🔧 Distributed Training Configuration:"
 echo "   - WORLD_SIZE: $WORLD_SIZE"
 echo "   - MASTER_ADDR: $MASTER_ADDR"
 echo "   - MASTER_PORT: $MASTER_PORT"
-echo "   - SLURM assigned CPUs: $SLURM_CPUS"
-echo "   - First CPU extracted: $FIRST_CPU"
-echo "   - CCL_WORKER_COUNT: $CCL_WORKER_COUNT"
-echo "   - CCL_WORKER_AFFINITY: $CCL_WORKER_AFFINITY"
-echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT"
+echo "   - CCL_ATL_TRANSPORT: $CCL_ATL_TRANSPORT (with SHM)"
+echo "   - CCL_ZE_IPC_EXCHANGE: $CCL_ZE_IPC_EXCHANGE"
 echo "   - I_MPI_ROOT: ${I_MPI_ROOT:-NOT SET}"
-echo "   - I_MPI_OFFLOAD: $I_MPI_OFFLOAD"
-# echo "   - FI_INFO: $(fi_info)"
-# echo "   - FI_PROVIDER: $FI_PROVIDER"
-# echo "   - FI_TCP_IFACE: $FI_TCP_IFACE"
-echo "   - CCL using Intel MPI with Level Zero IPC"
 echo ""
 
 # Verify Intel MPI is properly configured
