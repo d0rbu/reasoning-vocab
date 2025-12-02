@@ -3,14 +3,14 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH --job-name=rlvr-baseline
 #SBATCH --time=24:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
+#SBATCH --nodes=2
+#SBATCH --ntasks=2
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --output=baseline-%j
 #SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:pvc:8
+#SBATCH --gres=gpu:pvc:4
 #SBATCH --partition=gpu
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -69,7 +69,7 @@ source .venv/bin/activate
 srun uv run accelerate launch \
     --multi_gpu \
     --num_processes 8 \
-    --num_machines 1 \
+    --num_machines 2 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $NODE_RANK \
