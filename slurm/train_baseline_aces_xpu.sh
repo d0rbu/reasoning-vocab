@@ -79,21 +79,34 @@ if [ -n "$I_MPI_ROOT" ] && [ -z "$ONEAPI_ROOT" ]; then
     fi
 fi
 
-# CRITICAL FIX: Ensure Python oneCCL can find libfabric and its providers
-# The oneCCL library dynamically loads libfabric but needs to find the system version
+# CRITICAL FIX: Force oneCCL to use system libfabric with preload
+# The Python oneCCL package has its own libfabric that doesn't find providers
+# We need to preload the system libfabric to override it
 if [ -n "$EBROOTLIBFABRIC" ]; then
-    # EasyBuild sets EBROOTLIBFABRIC for the libfabric module
     export LD_LIBRARY_PATH="$EBROOTLIBFABRIC/lib:${LD_LIBRARY_PATH}"
     echo "Added libfabric to LD_LIBRARY_PATH: $EBROOTLIBFABRIC/lib"
-fi
-
-# Also ensure FI_PROVIDER_PATH points to where providers are installed
-if [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib/libfabric" ]; then
-    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib/libfabric"
-    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
-elif [ -n "$EBROOTLIBFABRIC" ] && [ -d "$EBROOTLIBFABRIC/lib" ]; then
-    export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib"
-    echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+    
+    # Find the system libfabric.so and preload it
+    if [ -f "$EBROOTLIBFABRIC/lib/libfabric.so" ]; then
+        export LD_PRELOAD="$EBROOTLIBFABRIC/lib/libfabric.so${LD_PRELOAD:+:$LD_PRELOAD}"
+        echo "LD_PRELOAD set to force system libfabric: $EBROOTLIBFABRIC/lib/libfabric.so"
+    elif [ -f "$EBROOTLIBFABRIC/lib/libfabric.so.1" ]; then
+        export LD_PRELOAD="$EBROOTLIBFABRIC/lib/libfabric.so.1${LD_PRELOAD:+:$LD_PRELOAD}"
+        echo "LD_PRELOAD set to force system libfabric: $EBROOTLIBFABRIC/lib/libfabric.so.1"
+    fi
+    
+    # Set provider path - check multiple possible locations
+    if [ -d "$EBROOTLIBFABRIC/lib/libfabric" ]; then
+        export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib/libfabric"
+        echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+    elif [ -d "$EBROOTLIBFABRIC/lib64/libfabric" ]; then
+        export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib64/libfabric"
+        echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH"
+    else
+        # Fallback: set to lib directory itself
+        export FI_PROVIDER_PATH="$EBROOTLIBFABRIC/lib"
+        echo "Set FI_PROVIDER_PATH to: $FI_PROVIDER_PATH (fallback)"
+    fi
 fi
 
 # Set up environment variables that might be needed for Intel XPU
