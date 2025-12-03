@@ -4,9 +4,9 @@
 num_train_epochs: 4
 learning_rate: 5.0e-6
 per_device_train_batch_size: 4
-gradient_accumulation_steps: 32
+gradient_accumulation_steps: 4
 effective_batch_size: 128  # per_device * gradient_accum * num_devices
-generation_batch_size: 4
+generation_batch_size: 1
 
 # GRPO-specific parameters
 num_generations: 8  # Number of generations per prompt for GRPO
