@@ -3,8 +3,8 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH -J rlvr-baseline
 #SBATCH -N 2
-#SBATCH -n 8
-#SBATCH --tasks-per-node 4
+#SBATCH -n 2
+#SBATCH --tasks-per-node 1
 #SBATCH -t 48:00:00
 #SBATCH -c 8
 #SBATCH -o baseline-%j
