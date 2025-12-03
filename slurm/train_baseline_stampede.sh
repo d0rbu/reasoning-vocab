@@ -3,8 +3,8 @@
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH -J rlvr-baseline
 #SBATCH -N 1
-#SBATCH -n 8
-#SBATCH --tasks-per-node 8
+#SBATCH -n 1
+#SBATCH --tasks-per-node 1
 #SBATCH -t 48:00:00
 #SBATCH -c 8
 #SBATCH -o baseline-%j
@@ -35,7 +35,6 @@ source .venv/bin/activate
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
-    --multi_gpu \
     --num_processes 8 \
     --num_machines 1 \
     --main_process_ip $MASTER_ADDR \
