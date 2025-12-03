@@ -19,6 +19,8 @@ export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
 export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
+export CUDA_LAUNCH_BLOCKING=1
+
 # Change to the project directory
 cd $SCRATCH/reasoning-vocab
 
