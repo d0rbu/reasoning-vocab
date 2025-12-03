@@ -2,7 +2,7 @@
 
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH -J rlvr-baseline
-#SBATCH -N 1
+#SBATCH -N 2
 #SBATCH -n 1
 #SBATCH --tasks-per-node 1
 #SBATCH -t 48:00:00
@@ -36,7 +36,7 @@ source .venv/bin/activate
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
     --num_processes 8 \
-    --num_machines 1 \
+    --num_machines 2 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
