@@ -1,16 +1,15 @@
 #!/bin/bash
 
 ##NECESSARY JOB SPECIFICATIONS
-#SBATCH --job-name=rlvr-baseline
-#SBATCH --time=48:00:00
-#SBATCH --ntasks=8
-#SBATCH --ntasks-per-node=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --output=baseline-%j
-#SBATCH --error=baseline-%j.err
-#SBATCH --gres=gpu:h100:8
-#SBATCH --partition=h100
+#SBATCH -J rlvr-baseline
+#SBATCH -N 1
+#SBATCH -n 8
+#SBATCH -ntasks-per-node 8
+#SBATCH -t 48:00:00
+#SBATCH -c 8
+#SBATCH -o baseline-%j
+#SBATCH -e baseline-%j.err
+#SBATCH -p h100
 
 ##OPTIONAL JOB SPECIFICATIONS
 ##SBATCH --account=123456
