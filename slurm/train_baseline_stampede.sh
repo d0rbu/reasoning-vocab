@@ -10,11 +10,6 @@
 #SBATCH -e baseline-%j.err
 #SBATCH -p h100
 
-##OPTIONAL JOB SPECIFICATIONS
-##SBATCH --account=123456
-##SBATCH --mail-type=ALL
-##SBATCH --mail-user=email_address
-
 # Enable detailed logging
 set -x
 
@@ -29,6 +24,11 @@ cd $SCRATCH/reasoning-vocab
 
 # Activate environment
 source .venv/bin/activate
+
+echo "MASTER_ADDR: $MASTER_ADDR"
+echo "MASTER_PORT: $MASTER_PORT"
+echo "RANK: $RANK"
+echo "WORLD_SIZE: $WORLD_SIZE"
 
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
