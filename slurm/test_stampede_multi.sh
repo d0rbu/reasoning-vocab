@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##NECESSARY JOB SPECIFICATIONS
-#SBATCH -J test
-#SBATCH -N 1
-#SBATCH -n 1
+#SBATCH -J test-multi
+#SBATCH -N 2
+#SBATCH -n 2
 #SBATCH --tasks-per-node 1
 #SBATCH -t 01:00:00
 #SBATCH -o test-%j
@@ -34,6 +34,11 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
-    --config_file accelerate_config/context_parallel_2gpu.yaml \
+    --config_file accelerate_config/8gpu_2node.yaml \
     --multi_gpu \
+    --num_processes 8 \
+    --num_machines 2 \
+    --main_process_ip $MASTER_ADDR \
+    --main_process_port $MASTER_PORT \
+    --machine_rank $RANK \
     exp/test.py
