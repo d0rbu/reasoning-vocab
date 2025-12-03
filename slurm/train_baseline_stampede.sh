@@ -34,16 +34,13 @@ source .venv/bin/activate
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
+    --config_file accelerate_config/default.yaml \
     --multi_gpu \
-    --use_deepspeed \
-    --use_fsdp \
-    --mixed_precision fp16 \
     --num_processes 8 \
     --num_machines 2 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
-    --rdzv_backend c10d \
     exp/grpo_train.py \
     model=baguettotron \
     training=grpo_baguettotron

@@ -13,8 +13,6 @@ fsdp_config:
   fsdp_version: 2
 main_training_function: main
 mixed_precision: bf16
-num_machines: 2
-num_processes: 8  # Number of GPUs
 rdzv_backend: static
 same_network: true
 tpu_env: []
@@ -25,4 +23,4 @@ parallelism_config:
   parallelism_config_dp_replicate_size: 1
   parallelism_config_dp_shard_size: 1
   parallelism_config_tp_size: 1
-  parallelism_config_cp_size: 1  # Context parallel size
+  parallelism_config_cp_size: 1
