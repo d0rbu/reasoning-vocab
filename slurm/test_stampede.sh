@@ -34,6 +34,6 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
-    --config_file accelerate_config/context_parallel_2gpu.yaml \
+    --config_file accelerate_config/context_parallel_4gpu.yaml \
     --multi_gpu \
     exp/test.py
