@@ -2,12 +2,12 @@
 
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH -J rlvr-baseline
-#SBATCH -N 2
-#SBATCH -n 2
+#SBATCH -N 1
+#SBATCH -n 1
 #SBATCH --tasks-per-node 1
-#SBATCH -t 48:00:00
-#SBATCH -o baseline-%j
-#SBATCH -e baseline-%j.err
+#SBATCH -t 01:00:00
+#SBATCH -o test-%j
+#SBATCH -e test-%j.err
 #SBATCH -p h100
 
 ##OPTIONAL JOB SPECIFICATIONS
@@ -30,20 +30,15 @@ cd $SCRATCH/reasoning-vocab
 # Activate environment
 source .venv/bin/activate
 
+echo "MASTER_ADDR: $MASTER_ADDR"
+echo "MASTER_PORT: $MASTER_PORT"
+echo "RANK: $RANK"
+echo "WORLD_SIZE: $WORLD_SIZE"
+
 # Run baseline training (no reasoning vocabulary)
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
+    --config_file accelerate_config/context_parallel_2gpu.yaml \
     --multi_gpu \
-    --use_deepspeed \
-    --use_fsdp \
-    --mixed_precision fp16 \
-    --num_processes 8 \
-    --num_machines 2 \
-    --main_process_ip $MASTER_ADDR \
-    --main_process_port $MASTER_PORT \
-    --machine_rank $RANK \
-    --rdzv_backend c10d \
-    exp/grpo_train.py \
-    model=baguettotron \
-    training=grpo_baguettotron
+    exp/test.py
