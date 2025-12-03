@@ -4,7 +4,7 @@
 #SBATCH -J rlvr-baseline
 #SBATCH -N 1
 #SBATCH -n 8
-#SBATCH -ntasks-per-node 8
+#SBATCH --tasks-per-node 8
 #SBATCH -t 48:00:00
 #SBATCH -c 8
 #SBATCH -o baseline-%j
