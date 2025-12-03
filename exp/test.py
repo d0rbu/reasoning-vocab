@@ -8,7 +8,7 @@ def reward_function(completions, **kwargs):
 
 
 trainer = GRPOTrainer(
-    model="Qwen/Qwen3-8B",
+    model="Qwen/Qwen2.5-0.5B",
     train_dataset=load_dataset("trl-lib/tldr", split="train"),
     reward_funcs=reward_function,
 )
