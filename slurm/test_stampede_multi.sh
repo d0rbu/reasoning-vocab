@@ -36,7 +36,6 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
     --config_file accelerate_config/context_parallel_2gpu.yaml \
-    --multi_gpu \
     --num_processes $(($SLURM_JOB_NUM_NODES * 4)) \
     --num_machines $SLURM_JOB_NUM_NODES \
     --main_process_ip $MASTER_ADDR \

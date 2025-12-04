@@ -1,6 +1,6 @@
 compute_environment: LOCAL_MACHINE
 debug: false
-distributed_type: FSDP
+distributed_type: MULTI_GPU
 downcast_bf16: 'no'
 enable_cpu_affinity: false
 fsdp_config:
@@ -19,6 +19,7 @@ tpu_use_cluster: false
 tpu_use_sudo: false
 use_cpu: false
 parallelism_config:
+  parallelism_config_sp_size: 1
   parallelism_config_dp_replicate_size: 1
   parallelism_config_dp_shard_size: 1
   parallelism_config_tp_size: 1
