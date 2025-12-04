@@ -44,8 +44,8 @@ source .venv/bin/activate
 # bruh 3 launchers lmao
 srun uv run accelerate launch \
     --multi_gpu \
-    --num_processes 8 \
-    --num_machines 4 \
+    --num_processes $(($SLURM_JOB_NUM_NODES * 2)) \
+    --num_machines $SLURM_JOB_NUM_NODES \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $NODE_RANK \
