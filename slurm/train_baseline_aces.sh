@@ -23,6 +23,7 @@ set -x
 # Set up distributed training environment variables
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_PORT=$(expr 10000 + $(echo -n $SLURM_JOBID | tail -c 4))
+export NODE_RANK=$SLURM_NODEID
 export RANK=$SLURM_PROCID
 export WORLD_SIZE=$SLURM_NTASKS
 
