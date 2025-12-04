@@ -36,7 +36,7 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 srun uv run accelerate launch \
     --config_file accelerate_config/default.yaml \
     --multi_gpu \
-    --num_processes 8 \
+    --num_processes 4 \
     --num_machines 2 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
