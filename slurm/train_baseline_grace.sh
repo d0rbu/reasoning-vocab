@@ -44,7 +44,7 @@ source .venv/bin/activate
 # bruh 3 launchers lmao
 srun uv run accelerate launch \
     --multi_gpu \
-    --num_processes 2 \
+    --num_processes 8 \
     --num_machines 4 \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
