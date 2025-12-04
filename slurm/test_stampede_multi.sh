@@ -41,4 +41,6 @@ srun uv run accelerate launch \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
+    --rdzv_backend c10d \
+    --rdzv_conf "rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT,rdzv_backend=c10d,timeout=60" \
     exp/test.py
