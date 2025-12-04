@@ -4,10 +4,9 @@
 #SBATCH -J test-multi
 #SBATCH -N 2
 #SBATCH -n 2
-#SBATCH --tasks-per-node 1
 #SBATCH -t 01:00:00
-#SBATCH -o test-%j
-#SBATCH -e test-%j.err
+#SBATCH -o test-%j-%a
+#SBATCH -e test-%j-%a.err
 #SBATCH -p h100
 
 # Enable detailed logging
