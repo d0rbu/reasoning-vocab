@@ -1,10 +1,10 @@
 compute_environment: LOCAL_MACHINE
 debug: false
-distributed_type: MULTI_GPU
+distributed_type: FSDP
 downcast_bf16: 'no'
 enable_cpu_affinity: false
 fsdp_config:
-  fsdp_activation_checkpointing: true  # Enable activation checkpointing for memory efficiency
+  fsdp_activation_checkpointing: false  # Enable activation checkpointing for memory efficiency
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_cpu_ram_efficient_loading: true
   fsdp_offload_params: false
