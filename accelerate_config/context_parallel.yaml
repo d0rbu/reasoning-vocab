@@ -4,7 +4,7 @@ distributed_type: FSDP
 downcast_bf16: 'no'
 enable_cpu_affinity: false
 fsdp_config:
-  fsdp_activation_checkpointing: false  # Enable activation checkpointing for memory efficiency
+  fsdp_activation_checkpointing: true  # Enable activation checkpointing for memory efficiency
   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
   fsdp_cpu_ram_efficient_loading: true
   fsdp_offload_params: false
@@ -23,4 +23,4 @@ parallelism_config:
   parallelism_config_dp_replicate_size: 1
   parallelism_config_dp_shard_size: 1
   parallelism_config_tp_size: 1
-  parallelism_config_cp_size: 2
+  parallelism_config_cp_size: 4

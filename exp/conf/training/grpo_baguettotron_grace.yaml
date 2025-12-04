@@ -33,7 +33,7 @@ bf16: true  # Use bfloat16 if available
 fp16: false
 
 # Gradient checkpointing for memory efficiency
-gradient_checkpointing: true
+gradient_checkpointing: false
 
 # Other settings
 dataloader_num_workers: 4
