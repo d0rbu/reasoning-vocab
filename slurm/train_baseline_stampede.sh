@@ -5,8 +5,8 @@
 #SBATCH -N 2
 #SBATCH -n 2
 #SBATCH -t 48:00:00
-#SBATCH -o baseline-%j-%a
-#SBATCH -e baseline-%j-%a.err
+#SBATCH -o baseline-%j
+#SBATCH -e baseline-%j.err
 #SBATCH -p h100
 
 # Enable detailed logging

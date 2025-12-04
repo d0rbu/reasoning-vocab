@@ -5,8 +5,8 @@
 #SBATCH -N 2
 #SBATCH -n 2
 #SBATCH -t 01:00:00
-#SBATCH -o test-%j-%a
-#SBATCH -e test-%j-%a.err
+#SBATCH -o test-%j
+#SBATCH -e test-%j.err
 #SBATCH -p h100
 
 # Enable detailed logging
@@ -35,7 +35,7 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 # Note: Hydra configs are in exp/conf/
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
-    --config_file accelerate_config/default.yaml \
+    --config_file accelerate_config/context_parallel_2gpu.yaml \
     --multi_gpu \
     --num_processes $(($SLURM_JOB_NUM_NODES * 4)) \
     --num_machines $SLURM_JOB_NUM_NODES \
