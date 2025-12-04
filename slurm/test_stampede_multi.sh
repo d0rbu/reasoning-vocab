@@ -41,5 +41,4 @@ srun uv run accelerate launch \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
-    --rdzv_backend c10d \
     exp/test.py
