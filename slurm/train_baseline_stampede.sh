@@ -2,8 +2,8 @@
 
 ##NECESSARY JOB SPECIFICATIONS
 #SBATCH -J rlvr-baseline
-#SBATCH -N 2
-#SBATCH -n 2
+#SBATCH -N 1
+#SBATCH -n 1
 #SBATCH -t 48:00:00
 #SBATCH -o baseline-%j
 #SBATCH -e baseline-%j.err
