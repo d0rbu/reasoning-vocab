@@ -10,6 +10,7 @@ Usage:
 """
 
 import os
+import time
 from pathlib import Path
 from typing import Any, cast
 
@@ -386,6 +387,8 @@ def main(cfg: DictConfig):
         logger.info(f"Checkpoint exists at {cfg.output_dir}. Resuming training...")
     else:
         logger.info(f"No checkpoint found at {cfg.output_dir}. Starting training from scratch...")
+
+    time.sleep(60)
 
     # Create GRPO config
     training_args = create_grpo_config(cfg)
