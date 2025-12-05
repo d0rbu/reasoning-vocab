@@ -3,7 +3,7 @@
 
 defaults:
   - model: qwen3_0.6b
-  - dataset: gsm
+  - dataset: deepmath
   - training: grpo_default
   - logging: wandb
   - _self_
