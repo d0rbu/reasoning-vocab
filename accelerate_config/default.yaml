@@ -19,7 +19,7 @@ parallelism_config:
   parallelism_config_dp_replicate_size: 1
   parallelism_config_dp_shard_size: 1
   parallelism_config_tp_size: 1
-  parallelism_config_cp_size: 8
+  parallelism_config_cp_size: 1
 same_network: true
 tpu_env: []
 tpu_use_cluster: false
