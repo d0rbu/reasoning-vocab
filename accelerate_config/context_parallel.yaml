@@ -20,7 +20,7 @@ tpu_use_sudo: false
 use_cpu: false
 parallelism_config:
   parallelism_config_sp_size: 1
-  parallelism_config_dp_replicate_size: 1
+  parallelism_config_dp_replicate_size: 2
   parallelism_config_dp_shard_size: 1
   parallelism_config_tp_size: 1
   parallelism_config_cp_size: 4
