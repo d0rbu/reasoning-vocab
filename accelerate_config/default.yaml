@@ -3,23 +3,23 @@ debug: true
 distributed_type: MULTI_GPU
 downcast_bf16: 'no'
 enable_cpu_affinity: false
-fsdp_config:
-  fsdp_activation_checkpointing: false  # Enable activation checkpointing for memory efficiency
-  fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
-  fsdp_cpu_ram_efficient_loading: true
-  fsdp_offload_params: false
-  fsdp_reshard_after_forward: true
-  fsdp_state_dict_type: SHARDED_STATE_DICT
-  fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
-  fsdp_version: 2
+# fsdp_config:
+#   fsdp_activation_checkpointing: false  # Enable activation checkpointing for memory efficiency
+#   fsdp_auto_wrap_policy: TRANSFORMER_BASED_WRAP
+#   fsdp_cpu_ram_efficient_loading: true
+#   fsdp_offload_params: false
+#   fsdp_reshard_after_forward: true
+#   fsdp_state_dict_type: SHARDED_STATE_DICT
+#   fsdp_transformer_layer_cls_to_wrap: LlamaDecoderLayer
+#   fsdp_version: 2
 main_training_function: main
 # mixed_precision: bf16
-parallelism_config:
-  parallelism_config_sp_size: 1
-  parallelism_config_dp_replicate_size: 1
-  parallelism_config_dp_shard_size: 1
-  parallelism_config_tp_size: 1
-  parallelism_config_cp_size: 1
+# parallelism_config:
+#   parallelism_config_sp_size: 1
+#   parallelism_config_dp_replicate_size: 1
+#   parallelism_config_dp_shard_size: 1
+#   parallelism_config_tp_size: 1
+#   parallelism_config_cp_size: 1
 same_network: true
 tpu_env: []
 tpu_use_cluster: false

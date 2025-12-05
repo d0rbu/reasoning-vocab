@@ -1,12 +1,12 @@
 #!/bin/bash
 
 ##NECESSARY JOB SPECIFICATIONS
-#SBATCH -J rlvr-baseline
+#SBATCH -J rlvr-grpo
 #SBATCH -N 1
 #SBATCH -n 1
 #SBATCH -t 48:00:00
-#SBATCH -o baseline-%j
-#SBATCH -e baseline-%j.err
+#SBATCH -o grpo-%j
+#SBATCH -e grpo-%j.err
 #SBATCH -p h100
 
 # Enable detailed logging
@@ -36,14 +36,28 @@ echo "WORLD_SIZE: $WORLD_SIZE"
 # Override parameters with: key=value (e.g., training.learning_rate=1e-5)
 srun uv run accelerate launch \
     --config_file accelerate_config/default.yaml \
-    --num_processes $(($SLURM_JOB_NUM_NODES * 4)) \
+    --num_processes $(($SLURM_JOB_NUM_NODES * 2)) \
     --num_machines $SLURM_JOB_NUM_NODES \
     --main_process_ip $MASTER_ADDR \
     --main_process_port $MASTER_PORT \
     --machine_rank $RANK \
     --rdzv_backend static \
+    --gpu_ids 0,1 \
     exp/grpo_train.py \
     model=baguettotron \
     training=grpo_baguettotron
-    # --rdzv_backend c10d \
-    # --rdzv_conf "rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT,rdzv_backend=static,timeout=60" \
+
+srun uv run accelerate launch \
+    --config_file accelerate_config/default.yaml \
+    --num_processes $(($SLURM_JOB_NUM_NODES * 2)) \
+    --num_machines $SLURM_JOB_NUM_NODES \
+    --main_process_ip $MASTER_ADDR \
+    --main_process_port $MASTER_PORT \
+    --machine_rank $RANK \
+    --rdzv_backend static \
+    --gpu_ids 2,3 \
+    exp/grpo_train.py \
+    exp_name=reasoning_vocab_run \
+    model=baguettotron \
+    model.reasoning_vocab_size=65536 \
+    training=grpo_baguettotron
