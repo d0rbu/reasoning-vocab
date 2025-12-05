@@ -16,6 +16,7 @@ from typing import Any, cast
 import datasets.builder
 import hydra
 import torch as th
+import torch.distributed as dist
 import transformers
 from datasets import Dataset, DatasetDict, IterableDataset, IterableDatasetDict, load_dataset
 from loguru import logger
@@ -423,6 +424,17 @@ def main(cfg: DictConfig):
     )
     save_reasoning_token_map(checkpoint_0_path, model)
     logger.debug("Saved reasoning token map for checkpoint-0")
+
+    # Sanity check distributed training
+    logger.info("=" * 80)
+    logger.info("Sanity checking distributed training...")
+    logger.info("=" * 80)
+    
+    if dist.is_initialized():
+        logger.info(f"Distributed training pre-initialized with {dist.get_world_size()} devices")
+    else:
+        dist.init_process_group(backend="nccl")
+        logger.info(f"Distributed training initialized with {dist.get_world_size()} devices")
 
     # Train
     logger.info("=" * 80)
