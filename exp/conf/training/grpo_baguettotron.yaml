@@ -3,8 +3,8 @@
 # Training hyperparameters
 num_train_epochs: 4
 learning_rate: 5.0e-6
-per_device_train_batch_size: 16
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 32
+gradient_accumulation_steps: 1
 effective_batch_size: 128  # per_device * gradient_accum * num_devices
 generation_batch_size: 8
 
@@ -29,7 +29,7 @@ eval_steps: 500
 save_total_limit: 3
 
 # Mixed precision training
-bf16: true  # Use bfloat16 if available
+bf16: false  # Use bfloat16 if available
 fp16: false
 
 # Gradient checkpointing for memory efficiency

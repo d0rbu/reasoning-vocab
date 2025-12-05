@@ -46,4 +46,4 @@ srun uv run accelerate launch \
     model=baguettotron \
     training=grpo_baguettotron
     # --rdzv_backend c10d \
-    # --rdzv_conf "rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT,rdzv_backend=c10d,timeout=60" \
+    # --rdzv_conf "rdzv_endpoint=$MASTER_ADDR:$MASTER_PORT,rdzv_backend=static,timeout=60" \
